@@ -40,50 +40,10 @@ final class OCRService: @unchecked Sendable {
                     return
                 }
 
-                let request = VNRecognizeTextRequest { request, error in
-                    if let error = error {
-                        continuation.resume(throwing: error)
-                        return
-                    }
-
-                    guard let observations = request.results as? [VNRecognizedTextObservation] else {
-                        continuation.resume(returning: OCRFrame(texts: [], imageSize: imageSize))
-                        return
-                    }
-
-                    let detectedTexts = observations.compactMap { observation -> DetectedText? in
-                        guard let topCandidate = observation.topCandidates(1).first else { return nil }
-                        guard topCandidate.confidence >= self.minimumConfidence else { return nil }
-
-                        var text = topCandidate.string.trimmingCharacters(in: .whitespacesAndNewlines)
-                        guard !text.isEmpty else { return nil }
-
-                        // Filter out very short texts that are likely noise
-                        guard text.count >= self.minimumTextLength else { return nil }
-
-                        // Clean up common OCR artifacts for better translation
-                        text = Self.cleanOCRText(text)
-                        guard !text.isEmpty, text.count >= self.minimumTextLength else { return nil }
-
-                        // Vision returns bounding box in normalized coordinates
-                        // Origin is bottom-left, we need to convert to top-left
-                        let bbox = observation.boundingBox
-                        let flippedBox = CGRect(
-                            x: bbox.origin.x,
-                            y: 1.0 - bbox.origin.y - bbox.height,
-                            width: bbox.width,
-                            height: bbox.height
-                        )
-
-                        return DetectedText(
-                            text: text,
-                            boundingBox: flippedBox,
-                            confidence: topCandidate.confidence
-                        )
-                    }
-
-                    continuation.resume(returning: OCRFrame(texts: detectedTexts, imageSize: imageSize))
-                }
+                // No completion handler: `perform` is synchronous and reports errors by
+                // throwing, so results are read after it returns. With a handler *and*
+                // a catch, one failed request could resume the continuation twice (crash).
+                let request = VNRecognizeTextRequest()
 
                 // .fast (~50-100ms) is the default because the pipeline runs at several FPS.
                 // .accurate (~200-300ms) is selectable in Settings for stylized game fonts.
@@ -97,10 +57,47 @@ final class OCRService: @unchecked Sendable {
                 let handler = VNImageRequestHandler(cgImage: image, options: [:])
                 do {
                     try handler.perform([request])
+                    let texts = self.detectedTexts(from: request.results ?? [])
+                    continuation.resume(returning: OCRFrame(texts: texts, imageSize: imageSize))
                 } catch {
                     continuation.resume(throwing: error)
                 }
             }
+        }
+    }
+
+    /// Filter, clean and convert Vision observations (confidence, minimum length,
+    /// cleanOCRText, bottom-left → top-left bounding boxes)
+    private func detectedTexts(from observations: [VNRecognizedTextObservation]) -> [DetectedText] {
+        observations.compactMap { observation -> DetectedText? in
+            guard let topCandidate = observation.topCandidates(1).first else { return nil }
+            guard topCandidate.confidence >= minimumConfidence else { return nil }
+
+            var text = topCandidate.string.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return nil }
+
+            // Filter out very short texts that are likely noise
+            guard text.count >= minimumTextLength else { return nil }
+
+            // Clean up common OCR artifacts for better translation
+            text = Self.cleanOCRText(text)
+            guard !text.isEmpty, text.count >= minimumTextLength else { return nil }
+
+            // Vision returns bounding box in normalized coordinates
+            // Origin is bottom-left, we need to convert to top-left
+            let bbox = observation.boundingBox
+            let flippedBox = CGRect(
+                x: bbox.origin.x,
+                y: 1.0 - bbox.origin.y - bbox.height,
+                width: bbox.width,
+                height: bbox.height
+            )
+
+            return DetectedText(
+                text: text,
+                boundingBox: flippedBox,
+                confidence: topCandidate.confidence
+            )
         }
     }
 
