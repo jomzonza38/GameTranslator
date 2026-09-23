@@ -17,8 +17,6 @@ final class TranslationPanelData: ObservableObject {
 
     @Published var entries: [Entry] = []
     @Published var isCollapsed = false
-    /// Index of the region chip scrolled to the left edge
-    var chipScrollIndex = 0
 
     func update(from regions: [TranslatedRegion]) {
         // Sort by vertical position (top to bottom) for natural reading order
@@ -40,10 +38,25 @@ final class TranslationPanelData: ObservableObject {
 
 // MARK: - SwiftUI Content View
 
+/// Width of the region chip row's content (for drag-to-scroll limits)
+private struct ChipRowWidthKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 /// The SwiftUI view rendered inside the floating panel
 struct TranslationPanelContent: View {
     @ObservedObject var data: TranslationPanelData
     @ObservedObject private var settings = AppSettings.shared
+
+    // Region chip row: horizontal offset (≤ 0) and sizes for drag-to-scroll
+    @State private var chipOffset: CGFloat = 0
+    @State private var chipDragStartOffset: CGFloat?
+    @State private var chipDidDrag = false
+    @State private var chipViewportWidth: CGFloat = 0
+    @State private var chipContentWidth: CGFloat = 0
     let onClose: () -> Void
 
     var body: some View {
@@ -166,82 +179,124 @@ struct TranslationPanelContent: View {
 
     // MARK: - Region Toggles
 
-    /// One chip per region — click to show/hide that region's translations.
-    /// Scrolls sideways (trackpad, shift+wheel or the ‹ › buttons) when there are many.
+    /// One chip per region — click a chip to show/hide that region's translations.
+    /// When there are more chips than fit, drag the row left/right with the mouse
+    /// (or use the ‹ › buttons). No scroll bar.
     private var regionToggles: some View {
-        ScrollViewReader { proxy in
-            HStack(spacing: 2) {
-                scrollButton("chevron.left") {
-                    scrollChips(by: -1, proxy: proxy)
-                }
+        HStack(spacing: 2) {
+            scrollButton("chevron.left", enabled: chipOffset < 0) {
+                moveChips(by: 120)
+            }
 
-                ScrollView(.horizontal, showsIndicators: true) {
-                    HStack(spacing: 6) {
-                        ForEach(settings.captureRegions) { region in
-                            regionChip(region)
-                                .id(region.id)
-                        }
+            GeometryReader { geometry in
+                HStack(spacing: 6) {
+                    ForEach(settings.captureRegions) { region in
+                        regionChip(region)
                     }
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 6)
                 }
-
-                scrollButton("chevron.right") {
-                    scrollChips(by: 1, proxy: proxy)
+                .fixedSize()
+                .background(
+                    GeometryReader { content in
+                        Color.clear.preference(key: ChipRowWidthKey.self, value: content.size.width)
+                    }
+                )
+                .offset(x: chipOffset)
+                .frame(width: geometry.size.width, height: geometry.size.height, alignment: .leading)
+                .clipped()
+                .contentShape(Rectangle())
+                .simultaneousGesture(chipDragGesture)
+                .onAppear { chipViewportWidth = geometry.size.width }
+                .onChange(of: geometry.size.width) { _, width in
+                    chipViewportWidth = width
+                    chipOffset = clampedChipOffset(chipOffset)
                 }
             }
-            .padding(.horizontal, 4)
+            .frame(height: 30)
+            .onPreferenceChange(ChipRowWidthKey.self) { width in
+                chipContentWidth = width
+                chipOffset = clampedChipOffset(chipOffset)
+            }
+
+            scrollButton("chevron.right", enabled: chipOffset > minChipOffset) {
+                moveChips(by: -120)
+            }
+        }
+        .padding(.horizontal, 4)
+        .padding(.vertical, 2)
+    }
+
+    private var chipDragGesture: some Gesture {
+        DragGesture(minimumDistance: 3)
+            .onChanged { value in
+                if chipDragStartOffset == nil {
+                    chipDragStartOffset = chipOffset
+                }
+                chipDidDrag = true
+                chipOffset = clampedChipOffset((chipDragStartOffset ?? 0) + value.translation.width)
+            }
+            .onEnded { _ in
+                chipDragStartOffset = nil
+                // Let the tap that ends a drag be ignored, then accept taps again
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 150_000_000)
+                    chipDidDrag = false
+                }
+            }
+    }
+
+    /// Most negative offset — the last chip's right edge at the viewport's right edge
+    private var minChipOffset: CGFloat {
+        min(0, chipViewportWidth - chipContentWidth)
+    }
+
+    private func clampedChipOffset(_ offset: CGFloat) -> CGFloat {
+        min(0, max(minChipOffset, offset))
+    }
+
+    private func moveChips(by delta: CGFloat) {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            chipOffset = clampedChipOffset(chipOffset + delta)
         }
     }
 
     private func regionChip(_ region: CaptureRegion) -> some View {
-        Button {
-            settings.toggleRegion(id: region.id)
-        } label: {
-            HStack(spacing: 4) {
-                Image(systemName: region.isEnabled ? "eye.fill" : "eye.slash")
-                    .font(.system(size: 9))
-                Text(region.name)
-                    .font(.system(size: 11, weight: .medium))
-                    .lineLimit(1)
-                    .fixedSize()
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .foregroundColor(region.isEnabled ? .white : .white.opacity(0.4))
-            .background(
-                Capsule()
-                    .fill(Color(nsColor: region.color.nsColor).opacity(region.isEnabled ? 0.45 : 0.08))
-            )
-            .overlay(
-                Capsule()
-                    .stroke(Color(nsColor: region.color.nsColor).opacity(region.isEnabled ? 0.9 : 0.35), lineWidth: 1)
-            )
+        HStack(spacing: 4) {
+            Image(systemName: region.isEnabled ? "eye.fill" : "eye.slash")
+                .font(.system(size: 9))
+            Text(region.name)
+                .font(.system(size: 11, weight: .medium))
+                .lineLimit(1)
+                .fixedSize()
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .foregroundColor(region.isEnabled ? .white : .white.opacity(0.4))
+        .background(
+            Capsule()
+                .fill(Color(nsColor: region.color.nsColor).opacity(region.isEnabled ? 0.45 : 0.08))
+        )
+        .overlay(
+            Capsule()
+                .stroke(Color(nsColor: region.color.nsColor).opacity(region.isEnabled ? 0.9 : 0.35), lineWidth: 1)
+        )
+        .contentShape(Capsule())
+        .onTapGesture {
+            guard !chipDidDrag else { return }
+            settings.toggleRegion(id: region.id)
+        }
         .help(region.isEnabled ? "ซ่อน \(region.name)" : "แสดง \(region.name)")
     }
 
-    private func scrollButton(_ systemName: String, action: @escaping () -> Void) -> some View {
+    private func scrollButton(_ systemName: String, enabled: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundColor(.white.opacity(0.5))
+                .foregroundColor(.white.opacity(enabled ? 0.6 : 0.15))
                 .frame(width: 18, height: 24)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-    }
-
-    /// Move the first visible chip by `step` (roughly one chip per click)
-    private func scrollChips(by step: Int, proxy: ScrollViewProxy) {
-        let regions = settings.captureRegions
-        guard !regions.isEmpty else { return }
-        let target = min(max(data.chipScrollIndex + step, 0), regions.count - 1)
-        data.chipScrollIndex = target
-        withAnimation(.easeInOut(duration: 0.2)) {
-            proxy.scrollTo(regions[target].id, anchor: .leading)
-        }
+        .disabled(!enabled)
     }
 
     // MARK: - Row
