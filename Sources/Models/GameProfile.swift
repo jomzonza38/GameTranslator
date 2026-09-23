@@ -14,3 +14,25 @@ struct GlossaryEntry: Codable, Identifiable, Hashable {
     var source: String
     var target: String
 }
+
+extension GlossaryEntry {
+    /// Both sides filled in
+    var isUsable: Bool {
+        !source.trimmingCharacters(in: .whitespaces).isEmpty &&
+        !target.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    /// Whether this entry's source term occurs in `text` (case-insensitive)
+    func appears(in text: String) -> Bool {
+        let term = source.trimmingCharacters(in: .whitespaces)
+        return !term.isEmpty && text.range(of: term, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+    }
+
+    /// Whether `text` is exactly this term (ignoring case and surrounding spaces/punctuation)
+    func matchesExactly(_ text: String) -> Bool {
+        let trim = CharacterSet.whitespacesAndNewlines.union(.punctuationCharacters)
+        let a = text.trimmingCharacters(in: trim)
+        let b = source.trimmingCharacters(in: trim)
+        return !b.isEmpty && a.compare(b, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+    }
+}

@@ -61,6 +61,10 @@ final class PipelineCoordinator: ObservableObject {
     private var recentLines: [(original: String, translation: String)] = []
     private let contextLineCount = 6
 
+    /// Glossary currently applied to translations, and an edit waiting to settle
+    private var appliedGlossary: [GlossaryEntry] = []
+    private var pendingGlossary: (entries: [GlossaryEntry], since: CFAbsoluteTime)?
+
     // MARK: - Init
 
     init() {
@@ -92,6 +96,8 @@ final class PipelineCoordinator: ObservableObject {
         // Per-game profile (title, glossary) keyed by the game's app name
         settings.selectGame(id: scWindow.owningApplication?.applicationName ?? scWindow.title ?? "Unknown")
         recentLines.removeAll()
+        appliedGlossary = settings.currentProfile.glossary.filter(\.isUsable)
+        pendingGlossary = nil
 
         selectedWindow = window
         isRunning = true
@@ -247,6 +253,8 @@ final class PipelineCoordinator: ObservableObject {
 
     private func runPipeline(image: CGImage, contentRect: CGRect) async {
         let pipelineStart = CFAbsoluteTimeGetCurrent()
+
+        await applyGlossaryChangesIfNeeded()
 
         do {
             // Step 1: OCR (whole frame — shared across all regions)
@@ -415,6 +423,15 @@ final class PipelineCoordinator: ObservableObject {
                 GameLog.log("Retrying \(untranslated.count) previously untranslated texts [\(label)]")
             }
 
+            // Texts that are exactly a glossary term use the fixed translation — no API call
+            textsToTranslate = textsToTranslate.filter { detected in
+                guard let entry = appliedGlossary.first(where: { $0.matchesExactly(detected.text) }) else {
+                    return true
+                }
+                state.cachedTranslations[detected.text] = entry.target
+                return false
+            }
+
             if !textsToTranslate.isEmpty {
                 let textStrings = textsToTranslate.map(\.text)
                 let label = regionName ?? "full-screen"
@@ -422,7 +439,7 @@ final class PipelineCoordinator: ObservableObject {
 
                 let translations = try await translationService.translateBatch(
                     textStrings,
-                    context: makeTranslationContext()
+                    context: makeTranslationContext(for: textStrings)
                 )
 
                 // Iterate in on-screen order so the context reads naturally
@@ -469,14 +486,50 @@ final class PipelineCoordinator: ObservableObject {
 
     // MARK: - Translation Context
 
-    private func makeTranslationContext() -> TranslationContext {
-        let profile = settings.currentProfile
+    private func makeTranslationContext(for texts: [String]) -> TranslationContext {
+        // Only send glossary terms that occur in this batch to keep prompts short
+        let relevantGlossary = appliedGlossary.filter { entry in
+            texts.contains { entry.appears(in: $0) }
+        }
         return TranslationContext(
             sourceLanguageName: settings.sourceLanguage.englishName,
-            gameTitle: profile.title,
+            gameTitle: settings.currentProfile.title,
             recentLines: settings.useConversationContext ? Array(recentLines.suffix(contextLineCount)) : [],
-            glossary: []
+            glossary: relevantGlossary
         )
+    }
+
+    /// When the glossary is edited, wait until it has been stable for a moment
+    /// (so typing doesn't trigger re-translation per keystroke), then drop cached
+    /// translations so on-screen text is re-translated with the new terms.
+    private func applyGlossaryChangesIfNeeded() async {
+        let current = settings.currentProfile.glossary.filter(\.isUsable)
+        guard current != appliedGlossary else {
+            pendingGlossary = nil
+            return
+        }
+
+        let now = CFAbsoluteTimeGetCurrent()
+        guard let pending = pendingGlossary, pending.entries == current else {
+            pendingGlossary = (current, now)
+            return
+        }
+        guard now - pending.since >= 1.5 else { return }
+
+        appliedGlossary = current
+        pendingGlossary = nil
+        await resetTranslationCaches()
+        GameLog.log("Glossary updated (\(current.count) terms) — re-translating on-screen text")
+    }
+
+    /// Forget all cached translations so visible text is translated again
+    func resetTranslationCaches() async {
+        globalState.reset()
+        for state in regionStates.values {
+            state.reset()
+        }
+        recentLines.removeAll()
+        await translationService.clearCache()
     }
 
     private func rememberLine(original: String, translation: String) {
