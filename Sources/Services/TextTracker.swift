@@ -142,8 +142,12 @@ final class TextTracker {
 
     // MARK: - String Similarity (Levenshtein-based)
 
-    /// Calculate similarity between two strings (0.0 = completely different, 1.0 = identical)
     private func stringSimilarity(_ a: String, _ b: String) -> Double {
+        Self.similarity(a, b)
+    }
+
+    /// Calculate similarity between two strings (0.0 = completely different, 1.0 = identical)
+    static func similarity(_ a: String, _ b: String) -> Double {
         if a == b { return 1.0 }
         if a.isEmpty || b.isEmpty { return 0.0 }
 
@@ -153,11 +157,14 @@ final class TextTracker {
     }
 
     /// Compute Levenshtein edit distance between two strings
-    private func levenshteinDistance(_ a: String, _ b: String) -> Int {
+    static func levenshteinDistance(_ a: String, _ b: String) -> Int {
         let aChars = Array(a)
         let bChars = Array(b)
         let m = aChars.count
         let n = bChars.count
+
+        if m == 0 { return n }
+        if n == 0 { return m }
 
         // Optimization: if length difference is too large, skip detailed computation
         if abs(m - n) > max(m, n) / 2 {

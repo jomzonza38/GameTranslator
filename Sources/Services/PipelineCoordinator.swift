@@ -41,6 +41,8 @@ final class PipelineCoordinator: ObservableObject {
     private var pendingFrame: (image: CGImage, contentRect: CGRect)?
     private var isProcessing = false
     private var singleShotRequested = false
+    /// Next pipeline run translates immediately without waiting for text to settle (single shot)
+    private var skipStabilityCheck = false
     private let settings = AppSettings.shared
 
     /// Callback when capture regions change (add/remove/clear)
@@ -256,6 +258,7 @@ final class PipelineCoordinator: ObservableObject {
         if isPaused {
             guard singleShotRequested else { return }
             singleShotRequested = false
+            skipStabilityCheck = true
         }
 
         guard !isProcessing else {
@@ -281,8 +284,24 @@ final class PipelineCoordinator: ObservableObject {
         }
     }
 
+    /// How long to wait before retrying a text whose translation request failed
+    private let retryDelay: CFAbsoluteTime = 3
+
+    /// One region's intermediate results for the current frame
+    private struct RegionFrameWork {
+        let state: RegionPipelineState
+        let regionColor: RegionColor?
+        let regionName: String?
+        /// Texts on screen in this region (after line merging), in reading order
+        let currentTexts: [DetectedText]
+        /// Texts that need an API translation this frame
+        let textsToTranslate: [String]
+    }
+
     private func runPipeline(image: CGImage, contentRect: CGRect) async {
         let pipelineStart = CFAbsoluteTimeGetCurrent()
+        let translateImmediately = skipStabilityCheck
+        skipStabilityCheck = false
 
         await applyGlossaryChangesIfNeeded()
 
@@ -302,49 +321,53 @@ final class PipelineCoordinator: ObservableObject {
             let windowFrame = screenCapture.currentWindowFrame ?? contentRect
             let captureRegions = settings.captureRegions
 
-            var allTranslatedRegions: [TranslatedRegion] = []
-            var totalTranslateTime: Double = 0
-
+            // Step 2: per region — filter, merge lines, diff, reuse known translations
+            var works: [RegionFrameWork] = []
             if captureRegions.isEmpty {
-                // No regions defined — process full screen with global state
-                let (regions, translateTime) = await processRegionPipeline(
-                    ocrFrame: ocrFrame,
-                    filterRegion: nil,
-                    regionColor: nil,
-                    regionName: nil,
-                    state: globalState,
-                    windowFrame: windowFrame,
-                    ocrTime: ocrTime
-                )
-                allTranslatedRegions.append(contentsOf: regions)
-                totalTranslateTime += translateTime
+                works.append(prepareRegion(
+                    ocrFrame: ocrFrame, filterRegion: nil, regionColor: nil, regionName: nil,
+                    state: globalState, ocrTime: ocrTime, translateImmediately: translateImmediately
+                ))
             } else {
-                // Process each capture region separately
                 for captureRegion in captureRegions {
-                    // Ensure we have state for this region
-                    if regionStates[captureRegion.id] == nil {
-                        regionStates[captureRegion.id] = RegionPipelineState()
+                    let state: RegionPipelineState
+                    if let existing = regionStates[captureRegion.id] {
+                        state = existing
+                    } else {
+                        state = RegionPipelineState()
+                        regionStates[captureRegion.id] = state
                     }
-                    let state = regionStates[captureRegion.id]!
-
-                    let (regions, translateTime) = await processRegionPipeline(
-                        ocrFrame: ocrFrame,
-                        filterRegion: captureRegion.rect,
-                        regionColor: captureRegion.color,
-                        regionName: captureRegion.name,
-                        state: state,
-                        windowFrame: windowFrame,
-                        ocrTime: ocrTime
-                    )
-                    allTranslatedRegions.append(contentsOf: regions)
-                    totalTranslateTime += translateTime
+                    works.append(prepareRegion(
+                        ocrFrame: ocrFrame, filterRegion: captureRegion.rect,
+                        regionColor: captureRegion.color, regionName: captureRegion.name,
+                        state: state, ocrTime: ocrTime, translateImmediately: translateImmediately
+                    ))
                 }
             }
 
-            // Step 6: Resolve overlapping regions — push colliding boxes down
+            // Step 3: one translation request for every region together
+            let translateStart = CFAbsoluteTimeGetCurrent()
+            await translatePending(works)
+            let translateTime = CFAbsoluteTimeGetCurrent() - translateStart
+
+            // Step 4: cache bookkeeping and on-screen boxes per region
+            var allTranslatedRegions: [TranslatedRegion] = []
+            for work in works {
+                finishRegion(work)
+                allTranslatedRegions += RegionLayout.buildRegions(
+                    from: work.currentTexts,
+                    windowFrame: windowFrame,
+                    options: layoutOptions,
+                    regionColor: work.regionColor,
+                    regionName: work.regionName,
+                    translation: work.state.translation(for:)
+                )
+            }
+
+            // Step 5: Resolve overlapping regions — push colliding boxes down
             let resolvedRegions = RegionLayout.resolveOverlaps(allTranslatedRegions, options: layoutOptions)
 
-            // Step 7: ALWAYS update display (overlay or panel)
+            // Step 6: ALWAYS update display (overlay or panel)
             currentRegions = resolvedRegions
             if settings.displayMode == .overlay {
                 overlayController.updateRegions(resolvedRegions, windowFrame: windowFrame)
@@ -356,7 +379,7 @@ final class PipelineCoordinator: ObservableObject {
             let totalTime = CFAbsoluteTimeGetCurrent() - pipelineStart
             stats.update(
                 ocrTime: ocrTime,
-                translateTime: totalTranslateTime,
+                translateTime: translateTime,
                 totalTime: totalTime,
                 textsDetected: ocrFrame.texts.count,
                 textsTranslated: allTranslatedRegions.count
@@ -367,17 +390,17 @@ final class PipelineCoordinator: ObservableObject {
         }
     }
 
-    /// Process the pipeline for a single region (or full-screen when filterRegion is nil).
-    /// Returns translated regions and the time spent translating.
-    private func processRegionPipeline(
+    /// Filter the frame to one region (or full screen when `filterRegion` is nil),
+    /// diff it with the previous frame, and decide which texts need an API call.
+    private func prepareRegion(
         ocrFrame: OCRFrame,
         filterRegion: CGRect?,
         regionColor: RegionColor?,
         regionName: String?,
         state: RegionPipelineState,
-        windowFrame: CGRect,
-        ocrTime: Double
-    ) async -> ([TranslatedRegion], Double) {
+        ocrTime: Double,
+        translateImmediately: Bool
+    ) -> RegionFrameWork {
         // Filter by region (if specified)
         let filteredFrame: OCRFrame
         if let region = filterRegion {
@@ -420,109 +443,121 @@ final class PipelineCoordinator: ObservableObject {
             }
         }
 
-        // Translate new/changed/untranslated texts
-        var translateTime: Double = 0
+        let currentTexts = (diffResult.unchangedTexts + diffResult.newTexts + diffResult.changedTexts.map(\.new))
+            .sorted { $0.boundingBox.minY < $1.boundingBox.minY }
+        let unchanged = Set(diffResult.unchangedTexts.map(\.text))
+        let now = CFAbsoluteTimeGetCurrent()
+
+        var textsToTranslate: [String] = []
+        for detected in currentTexts {
+            let text = detected.text
+            if state.cachedTranslations[text] != nil { continue }
+
+            // Came back on screen within the grace period
+            if let stale = state.staleTranslations.removeValue(forKey: text) {
+                state.cachedTranslations[text] = stale.translation
+                continue
+            }
+
+            // Exactly a glossary term — fixed translation, no API call
+            if let fixed = contextBuilder.fixedTranslation(for: text) {
+                state.cachedTranslations[text] = fixed
+                continue
+            }
+
+            // Same line as before with a misread letter — keep the existing translation
+            // so the text on screen doesn't change and doesn't need to be re-read
+            if unchanged.contains(text), let similar = state.similarTranslation(for: text) {
+                state.cachedTranslations[text] = similar
+                continue
+            }
+
+            // Wait until the text stops changing (typewriter effect, fade-in)
+            guard translateImmediately || state.isStable(text) else { continue }
+
+            // Back off after a failed request instead of retrying every frame
+            if let failed = state.failedAt[text], now - failed < retryDelay { continue }
+
+            if !textsToTranslate.contains(text) {
+                textsToTranslate.append(text)
+            }
+        }
+
+        state.previousFrameTexts = currentTexts.map(\.text)
+
+        return RegionFrameWork(
+            state: state,
+            regionColor: regionColor,
+            regionName: regionName,
+            currentTexts: currentTexts,
+            textsToTranslate: textsToTranslate
+        )
+    }
+
+    /// Translate what every region needs in a single request
+    private func translatePending(_ works: [RegionFrameWork]) async {
+        var texts: [String] = []
+        for work in works {
+            for text in work.textsToTranslate where !texts.contains(text) {
+                texts.append(text)
+            }
+        }
+        guard !texts.isEmpty else { return }
+
+        let labels = works.filter { !$0.textsToTranslate.isEmpty }.map { $0.regionName ?? "full-screen" }
+        GameLog.log("Translating \(texts.count) texts via \(translationService.currentProviderName) [\(labels.joined(separator: ", "))]...")
+
         do {
-            let translateStart = CFAbsoluteTimeGetCurrent()
-
-            // Promote stale cache hits back to active cache
-            for text in diffResult.unchangedTexts {
-                if state.cachedTranslations[text.text] == nil,
-                   let stale = state.staleTranslations.removeValue(forKey: text.text) {
-                    state.cachedTranslations[text.text] = stale.translation
-                }
-            }
-            for text in diffResult.newTexts {
-                if let stale = state.staleTranslations.removeValue(forKey: text.text) {
-                    state.cachedTranslations[text.text] = stale.translation
-                }
-            }
-
-            // Collect texts that need translation
-            var textsToTranslate = diffResult.textsNeedingTranslation.filter {
-                state.cachedTranslations[$0.text] == nil
-            }
-
-            // Retry any "unchanged" texts still missing a translation
-            let untranslated = diffResult.unchangedTexts.filter {
-                state.cachedTranslations[$0.text] == nil
-            }
-            if !untranslated.isEmpty {
-                textsToTranslate.append(contentsOf: untranslated)
-                let label = regionName ?? "full-screen"
-                GameLog.log("Retrying \(untranslated.count) previously untranslated texts [\(label)]")
-            }
-
-            // Texts that are exactly a glossary term use the fixed translation — no API call
-            textsToTranslate = textsToTranslate.filter { detected in
-                guard let fixed = contextBuilder.fixedTranslation(for: detected.text) else {
-                    return true
-                }
-                state.cachedTranslations[detected.text] = fixed
-                return false
-            }
-
-            if !textsToTranslate.isEmpty {
-                let textStrings = textsToTranslate.map(\.text)
-                let label = regionName ?? "full-screen"
-                GameLog.log("Translating \(textStrings.count) texts via \(translationService.currentProviderName) [\(label)]...")
-
-                let translations = try await translationService.translateBatch(
-                    textStrings,
-                    context: contextBuilder.context(
-                        for: textStrings,
-                        sourceLanguageName: settings.sourceLanguage.englishName,
-                        gameTitle: settings.currentProfile.title,
-                        includeRecentLines: settings.useConversationContext
-                    )
+            let translations = try await translationService.translateBatch(
+                texts,
+                context: contextBuilder.context(
+                    for: texts,
+                    sourceLanguageName: settings.sourceLanguage.englishName,
+                    gameTitle: settings.currentProfile.title,
+                    includeRecentLines: settings.useConversationContext
                 )
+            )
 
-                // Iterate in on-screen order so the context reads naturally
-                for text in textStrings {
-                    guard let translation = translations[text] else { continue }
-                    state.cachedTranslations[text] = translation
-                    contextBuilder.remember(original: text, translation: translation)
-                    TranslationHistory.shared.add(
-                        original: text,
-                        translation: translation,
-                        game: settings.currentProfile.title
-                    )
-                    GameLog.log("\u{2713} \"\(text)\" \u{2192} \"\(translation)\"")
+            // Iterate in on-screen order so the context reads naturally
+            for text in texts {
+                guard let translation = translations[text] else { continue }
+                for work in works where work.textsToTranslate.contains(text) {
+                    work.state.cachedTranslations[text] = translation
+                    work.state.failedAt.removeValue(forKey: text)
                 }
+                contextBuilder.remember(original: text, translation: translation)
+                TranslationHistory.shared.add(
+                    original: text,
+                    translation: translation,
+                    game: settings.currentProfile.title
+                )
+                GameLog.log("\u{2713} \"\(text)\" \u{2192} \"\(translation)\"")
             }
-
-            // Move removed translations to stale cache (10s grace period)
-            if diffResult.hasChanges {
-                let now = CFAbsoluteTimeGetCurrent()
-                for removed in diffResult.removedTexts {
-                    if let translation = state.cachedTranslations.removeValue(forKey: removed.text) {
-                        state.staleTranslations[removed.text] = (translation, now + 10)
-                    }
-                }
-                state.staleTranslations = state.staleTranslations.filter { $0.value.expiry > now }
-            }
-
-            translateTime = CFAbsoluteTimeGetCurrent() - translateStart
+            lastError = nil
         } catch {
+            let now = CFAbsoluteTimeGetCurrent()
+            for work in works {
+                for text in work.textsToTranslate {
+                    work.state.failedAt[text] = now
+                }
+            }
             GameLog.log("\u{2717} Translation error: \(error.localizedDescription)")
             lastError = error.localizedDescription
         }
+    }
 
-        // Build regions from current OCR data + cached translations
-        let allCurrentTexts = diffResult.unchangedTexts +
-            diffResult.newTexts +
-            diffResult.changedTexts.map(\.new)
+    /// Move translations of texts that left the screen to the stale cache (10 s grace period)
+    private func finishRegion(_ work: RegionFrameWork) {
+        let state = work.state
+        let now = CFAbsoluteTimeGetCurrent()
+        let onScreen = Set(work.currentTexts.map(\.text))
 
-        let regions = RegionLayout.buildRegions(
-            from: allCurrentTexts,
-            windowFrame: windowFrame,
-            options: layoutOptions,
-            regionColor: regionColor,
-            regionName: regionName,
-            translation: state.translation(for:)
-        )
-
-        return (regions, translateTime)
+        for (text, translation) in state.cachedTranslations where !onScreen.contains(text) {
+            state.cachedTranslations.removeValue(forKey: text)
+            state.staleTranslations[text] = (translation, now + 10)
+        }
+        state.staleTranslations = state.staleTranslations.filter { $0.value.expiry > now }
+        state.failedAt = state.failedAt.filter { now - $0.value < 60 }
     }
 
     // MARK: - Layout
