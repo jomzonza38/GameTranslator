@@ -252,6 +252,17 @@ private struct CaptureSettingsTab: View {
             }
 
             Section("OCR") {
+                Picker("ความแม่นยำ:", selection: $settings.ocrAccuracy) {
+                    ForEach(AppSettings.OCRAccuracy.allCases) { level in
+                        Text(level.displayName).tag(level)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                Text(settings.ocrAccuracy.detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
                 HStack {
                     Text("ความมั่นใจขั้นต่ำ:")
                     Slider(value: Binding(

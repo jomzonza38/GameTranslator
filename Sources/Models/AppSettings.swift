@@ -65,6 +65,29 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    // MARK: - OCR Accuracy
+
+    enum OCRAccuracy: String, CaseIterable, Identifiable {
+        case fast = "fast"
+        case accurate = "accurate"
+
+        var id: String { rawValue }
+
+        var displayName: String {
+            switch self {
+            case .fast: return "เร็ว (Fast)"
+            case .accurate: return "แม่นยำ (Accurate)"
+            }
+        }
+
+        var detail: String {
+            switch self {
+            case .fast: return "~50-100ms ต่อเฟรม เหมาะกับข้อความตัวใหญ่ พื้นหลังเรียบ"
+            case .accurate: return "~200-300ms ต่อเฟรม อ่านฟอนต์เกมและพื้นหลังลายได้ดีกว่า แนะนำ FPS 2-3"
+            }
+        }
+    }
+
     @Published var selectedProvider: TranslationProviderType {
         didSet { defaults.set(selectedProvider.rawValue, forKey: "selectedProvider") }
     }
@@ -121,6 +144,10 @@ final class AppSettings: ObservableObject {
 
     // MARK: - General
 
+    @Published var ocrAccuracy: OCRAccuracy {
+        didSet { defaults.set(ocrAccuracy.rawValue, forKey: "ocrAccuracy") }
+    }
+
     @Published var minimumConfidence: Float {
         didSet { defaults.set(minimumConfidence, forKey: "minimumConfidence") }
     }
@@ -162,6 +189,7 @@ final class AppSettings: ObservableObject {
         self.usageResetDate = resetInterval > 0 ? Date(timeIntervalSince1970: resetInterval) : Date()
 
         self.minimumConfidence = defaults.object(forKey: "minimumConfidence") as? Float ?? 0.5
+        self.ocrAccuracy = OCRAccuracy(rawValue: defaults.string(forKey: "ocrAccuracy") ?? "") ?? .fast
         self.showOriginalText = defaults.object(forKey: "showOriginalText") as? Bool ?? false
 
         let modeRaw = defaults.string(forKey: "displayMode") ?? DisplayMode.overlay.rawValue

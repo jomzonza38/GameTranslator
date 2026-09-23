@@ -242,6 +242,10 @@ final class PipelineCoordinator: ObservableObject {
 
         do {
             // Step 1: OCR (whole frame — shared across all regions)
+            // Pick up the latest OCR settings every frame so changes apply while running
+            ocrService.minimumConfidence = settings.minimumConfidence
+            ocrService.recognitionLevel = settings.ocrAccuracy == .accurate ? .accurate : .fast
+
             let ocrStart = CFAbsoluteTimeGetCurrent()
             let imageSize = CGSize(width: image.width, height: image.height)
             let ocrFrame = try await ocrService.recognizeText(in: image, imageSize: imageSize)

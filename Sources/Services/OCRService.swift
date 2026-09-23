@@ -10,6 +10,9 @@ final class OCRService: @unchecked Sendable {
     /// Minimum confidence to accept a text observation
     var minimumConfidence: Float = 0.5
 
+    /// Vision recognition level (.fast or .accurate)
+    var recognitionLevel: VNRequestTextRecognitionLevel = .fast
+
     /// Perform OCR on a CGImage
     /// - Parameters:
     ///   - image: The captured frame
@@ -76,13 +79,11 @@ final class OCRService: @unchecked Sendable {
                     continuation.resume(returning: OCRFrame(texts: detectedTexts, imageSize: imageSize))
                 }
 
-                // Use .fast for speed — the pipeline runs at 5 FPS and .accurate is too slow
-                // (~200-300ms vs ~50-100ms). Accuracy is improved instead through:
-                // - Language correction (usesLanguageCorrection = true)
-                // - Text cleaning (cleanOCRText) to fix common artifacts
-                // - Confidence filtering (minimumConfidence)
-                // - Text stabilization in TextTracker (fuzzy matching across frames)
-                request.recognitionLevel = .fast
+                // .fast (~50-100ms) is the default because the pipeline runs at several FPS.
+                // .accurate (~200-300ms) is selectable in Settings for stylized game fonts.
+                // Accuracy is further improved through language correction, text cleaning
+                // (cleanOCRText), confidence filtering and TextTracker stabilization.
+                request.recognitionLevel = self.recognitionLevel
                 request.recognitionLanguages = ["en"]
                 request.usesLanguageCorrection = true
                 request.automaticallyDetectsLanguage = false
