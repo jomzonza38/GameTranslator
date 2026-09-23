@@ -24,6 +24,10 @@ protocol TranslationProvider {
     /// Batch translation with extra context (game title, previous lines, glossary).
     /// Providers that can't use context fall back to `translateBatch(_:from:to:)`.
     func translateBatch(_ texts: [String], from: String, to: String, context: TranslationContext) async throws -> [String]
+
+    /// Open the HTTPS connection ahead of the first request (DNS + TLS take
+    /// ~100-300 ms), so the first translation arrives sooner.
+    func warmUp()
 }
 
 /// Extra information that helps context-aware (LLM) providers translate consistently
@@ -48,6 +52,8 @@ struct TranslationContext {
 
 // Default batch implementation
 extension TranslationProvider {
+    func warmUp() {}
+
     func translateBatch(_ texts: [String], from: String, to: String, context: TranslationContext) async throws -> [String] {
         try await translateBatch(texts, from: from, to: to)
     }

@@ -19,6 +19,13 @@ final class GoogleCloudProvider: TranslationProvider {
         self.session = URLSession(configuration: config)
     }
 
+    func warmUp() {
+        var request = URLRequest(url: URL(string: "https://translation.googleapis.com/")!)
+        request.httpMethod = "HEAD"
+        request.timeoutInterval = 5
+        session.dataTask(with: request).resume()
+    }
+
     func translate(_ text: String, from: String, to: String) async throws -> String {
         let results = try await translateBatch([text], from: from, to: to)
         guard let first = results.first else {

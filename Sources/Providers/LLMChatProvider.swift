@@ -89,7 +89,7 @@ enum LLMPrompt {
             : "1) Output ONLY the Thai translation, nothing else.")
         lines.append("2) Match the dramatic/emotional tone — serious dialogue stays serious, humor stays humorous.")
         lines.append("3) Use natural Thai that feels immersive and fitting for a game script.")
-        lines.append("4) Keep character names, proper nouns, and game terms in their original form unless the glossary below gives a Thai term.")
+        lines.append("4) Translate titles, epithets, roles, ranks and game terms into natural Thai the way an official Thai localization would (e.g. \"the Chosen One\" / \"Promised One\" → \"ผู้ถูกเลือก\", \"Guardian\" → \"ผู้พิทักษ์\"). Do not leave them in English and do not translate them word by word. Personal names of characters and places stay names — keep them as they are or write them in Thai script, consistently with previous lines. The glossary below always takes priority.")
         lines.append("5) Keep it concise — match the original's brevity.")
         lines.append("6) The input is raw on-screen game text captured by OCR. It may be a single word, a character name, a button label or a sentence fragment. Always output a translation — never ask questions, never ask for more context, never explain or add notes.")
         lines.append("7) If the text is a name or cannot be meaningfully translated, write it in Thai script or return it unchanged.")

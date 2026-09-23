@@ -19,6 +19,13 @@ final class GoogleFreeProvider: TranslationProvider {
         self.session = URLSession(configuration: config)
     }
 
+    func warmUp() {
+        var request = URLRequest(url: URL(string: "https://translate.googleapis.com/")!)
+        request.httpMethod = "HEAD"
+        request.timeoutInterval = 5
+        session.dataTask(with: request).resume()
+    }
+
     func translate(_ text: String, from: String, to: String) async throws -> String {
         let encodedText = text.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? text
 

@@ -85,7 +85,7 @@ struct GameSettingsTab: View {
         } header: {
             Text("Glossary — \(settings.currentProfile.title)")
         } footer: {
-            Text("OpenAI/Claude จะใช้คำแปลนี้ในประโยค · ทุก provider: ถ้าข้อความบนจอตรงกับคำนี้ทั้งคำ จะใช้คำแปลนี้ทันทีโดยไม่เรียก API")
+            Text("ใช้ได้ทุก provider — OpenAI/Claude ได้รับคำนี้ใน prompt, Google/DeepL จะถูกแทนคำก่อนส่งแปล และถ้าข้อความบนจอตรงกับคำนี้ทั้งคำ จะใช้คำแปลนี้ทันทีโดยไม่เรียก API")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }

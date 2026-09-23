@@ -32,6 +32,14 @@ final class DeepLProvider: TranslationProvider {
         self.session = URLSession(configuration: config)
     }
 
+    func warmUp() {
+        guard let url = URL(string: baseURL) else { return }
+        var request = URLRequest(url: url)
+        request.httpMethod = "HEAD"
+        request.timeoutInterval = 5
+        session.dataTask(with: request).resume()
+    }
+
     func translate(_ text: String, from: String, to: String) async throws -> String {
         guard !apiKey.isEmpty else {
             throw TranslationError.missingApiKey

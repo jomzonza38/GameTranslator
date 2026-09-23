@@ -21,6 +21,13 @@ final class OpenAIProvider: LLMChatProvider {
         self.session = URLSession(configuration: config)
     }
 
+    func warmUp() {
+        var request = URLRequest(url: URL(string: "https://api.openai.com/")!)
+        request.httpMethod = "HEAD"
+        request.timeoutInterval = 5
+        session.dataTask(with: request).resume()
+    }
+
     func complete(system: String, user: String, maxTokens: Int) async throws -> String {
         guard !apiKey.isEmpty else { throw TranslationError.missingApiKey }
 

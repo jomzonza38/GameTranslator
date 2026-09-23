@@ -17,6 +17,26 @@ final class TranslationService: @unchecked Sendable {
         self.provider = TranslationService.createProvider(for: settings.selectedProvider, settings: settings)
     }
 
+    /// Replace glossary terms in `text` with their Thai translation before sending it
+    /// to a machine-translation provider (Google, DeepL), which can't take a glossary.
+    /// Those services leave Thai words untouched, so the fixed term survives.
+    static func applyGlossary(_ glossary: [GlossaryEntry], to text: String) -> String {
+        var result = text
+        // Longest terms first so "Dark Knight" wins over "Knight"
+        for entry in glossary.sorted(by: { $0.source.count > $1.source.count }) {
+            let term = entry.source.trimmingCharacters(in: .whitespaces)
+            guard !term.isEmpty else { continue }
+            let pattern = "(?<![\\p{L}\\p{N}])" + NSRegularExpression.escapedPattern(for: term) + "(?![\\p{L}\\p{N}])"
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { continue }
+            result = regex.stringByReplacingMatches(
+                in: result,
+                range: NSRange(result.startIndex..., in: result),
+                withTemplate: NSRegularExpression.escapedTemplate(for: entry.target)
+            )
+        }
+        return result
+    }
+
     /// Create provider instance based on type
     static func createProvider(for type: AppSettings.TranslationProviderType, settings: AppSettings) -> TranslationProvider {
         switch type {
@@ -38,6 +58,7 @@ final class TranslationService: @unchecked Sendable {
     /// Switch to a different translation provider
     func switchProvider(to type: AppSettings.TranslationProviderType) {
         provider = TranslationService.createProvider(for: type, settings: settings)
+        provider.warmUp()
     }
 
     /// Translate a single text with caching
@@ -88,11 +109,19 @@ final class TranslationService: @unchecked Sendable {
                 )
             }
 
+            let requestContext = context ?? .basic(from: sourceLanguage)
+
+            // LLM providers get the glossary in the prompt; others get terms pre-replaced
+            var textsToSend = uncachedTexts
+            if !(provider is LLMChatProvider) && !requestContext.glossary.isEmpty {
+                textsToSend = uncachedTexts.map { Self.applyGlossary(requestContext.glossary, to: $0) }
+            }
+
             let translations = try await provider.translateBatch(
-                uncachedTexts,
+                textsToSend,
                 from: sourceLanguage,
                 to: targetLanguage,
-                context: context ?? .basic(from: sourceLanguage)
+                context: requestContext
             )
 
             for (text, translation) in zip(uncachedTexts, translations) {
