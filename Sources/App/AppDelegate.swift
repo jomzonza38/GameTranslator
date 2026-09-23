@@ -6,8 +6,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var statusBarController: StatusBarController?
 
     /// Set while waiting for the user to grant Screen Recording. When macOS relaunches
-    /// the app afterwards ("Quit & Reopen"), the window picker opens so it's obvious
-    /// the app is running — a menu bar app otherwise shows only a small icon.
+    /// the app afterwards ("Quit & Reopen"), the welcome message is shown even if it
+    /// was turned off, so it's obvious the app is running.
     private let awaitingPermissionKey = "awaitingScreenRecordingPermission"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -72,9 +72,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Task { @MainActor [weak self] in
                 // Give the menu bar item a moment to appear before pointing at it
                 try? await Task.sleep(nanoseconds: 500_000_000)
-                if justGranted {
-                    self?.statusBarController?.presentWindowPicker()
-                } else if AppSettings.shared.showWelcomeOnLaunch {
+                // Right after granting permission always show it (the user has just been
+                // through System Settings and needs to know the app is back and where it is);
+                // its "เลือกเกมเลย" button opens the window picker.
+                if justGranted || AppSettings.shared.showWelcomeOnLaunch {
                     self?.statusBarController?.showWelcome()
                 }
             }
@@ -94,7 +95,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.informativeText = """
             1. กด "เปิด System Settings"
             2. เปิดสวิตช์ GameTranslator ใน Screen & System Audio Recording
-            3. กด "ออกและเปิดใหม่" (Quit & Reopen) — แอปจะเปิดกลับมาพร้อมหน้าต่างเลือกเกม
+            3. กด "ออกและเปิดใหม่" (Quit & Reopen) — แอปจะเปิดกลับมาพร้อมข้อความบอกวิธีใช้
 
             ถ้าเห็น GameTranslator หลายรายการ ให้ลบอันเก่าออก (ปุ่ม −) แล้วเปิดสวิตช์อันที่เหลือ
             """
