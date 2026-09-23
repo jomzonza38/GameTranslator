@@ -33,3 +33,22 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     entitlements:
       path: Resources/GameTranslator.entitlements
+    scheme:
+      testTargets:
+        - GameTranslatorTests
+
+  GameTranslatorTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests
+    dependencies:
+      - target: GameTranslator
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_STYLE: Manual
+        PRODUCT_BUNDLE_IDENTIFIER: com.worawalan.GameTranslatorTests
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/GameTranslator.app/Contents/MacOS/GameTranslator"
+        BUNDLE_LOADER: "$(TEST_HOST)"

@@ -11,6 +11,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var permissionCheckTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Unit tests use the app as host — skip the menu bar UI, permission
+        // prompts and the single-instance check so tests run unattended.
+        let environment = ProcessInfo.processInfo.environment
+        if environment.keys.contains(where: { $0.hasPrefix("XCTest") }) || NSClassFromString("XCTestCase") != nil {
+            return
+        }
+
         // Only one copy should run. Xcode launches its own build right after the
         // install build phase has already launched the copy in /Applications; without
         // this guard both fight over the menu bar item and truncate each other's log.
