@@ -147,7 +147,7 @@ thinks it is running. This is stability goal 2.
 
 **Outcome:** PARTIAL — all `[code]`/`[build]` criteria pass; AC-4 and AC-5 pending owner
 **Version:** 1.11.12 → 1.11.13
-**Commit:** not committed (waiting for owner)
+**Commit:** `275e90d` (owner asked to commit while the task was in REVIEW)
 
 ### Acceptance criteria
 | AC | Result | Evidence |
@@ -209,6 +209,21 @@ normally → no "หน้าต่างเกมถูกปิด" message ap
 ---
 
 ## Review
+
+**Cowork, 2026-09-23 — code review passed; waiting for owner's AC-4 / AC-5 before DONE.**
+
+| AC | Verdict | Note |
+|---|---|---|
+| AC-1 | ✅ accepted | Delegate + 1 s watchdog both funnel into one locked `reportUnexpectedStop` → `handleUnexpectedStop` → `tearDown()`. Covers the amended case (capture started on a closed window). |
+| AC-2 | ✅ accepted | Session cleared before our own `stopCapture()`; `handleUnexpectedStop` also guards `isRunning`. |
+| AC-3 | ✅ accepted | Only `CGWindowListCopyWindowInfo` added — no permission dialog. No alert / no UserNotifications — good call. |
+| AC-4 | ⏳ pending owner | Installed app is still v1.11.12 (log 23:15) — not tested yet. |
+| AC-5 | ⏳ pending owner | same |
+| AC-6 | ✅ accepted | 56 tests, TEST + BUILD SUCCEEDED reported. |
+
+- Scope/version OK (1.11.12 → 1.11.13). Committed as `275e90d` during REVIEW at the owner's request — fine; a fix, if needed, goes in a corrective task.
+- **Extra manual check requested (risk, not a defect yet):** the watchdog tracks one window ID. Some games destroy and recreate their window when switching fullscreen ↔ windowed; that would now stop translation with "หน้าต่างเกมถูกปิด". Owner: toggle fullscreen in a game while translating and note the result. If it stops, Cowork will open a follow-up task (e.g. re-attach to the same app's new window) — it does not fail this task.
+- Follow-ups noted: minimised game (out of scope), on-screen toast (UX, later). Not turned into tasks yet.
 
 ## Status history
 | Date | Change | Who | Note |

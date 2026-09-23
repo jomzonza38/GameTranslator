@@ -39,6 +39,9 @@ final class PipelineCoordinator: ObservableObject {
     private var isProcessing = false
     /// The running drain loop, cancelled by stop()
     private var pipelineTask: Task<Void, Never>?
+    /// Moved on by every start and teardown, so a start that finishes after the user
+    /// stopped (or started again) leaves the current state alone
+    private var sessions = StartGeneration()
     private let settings = AppSettings.shared
 
     /// Callback when capture regions change (add/remove/clear)
@@ -96,6 +99,7 @@ final class PipelineCoordinator: ObservableObject {
         settings.selectGame(id: scWindow.owningApplication?.applicationName ?? scWindow.title ?? "Unknown")
         contextBuilder.reset(glossary: settings.currentProfile.glossary)
 
+        let session = sessions.begin()
         selectedWindow = window
         isRunning = true
         status = .capturing
@@ -127,11 +131,20 @@ final class PipelineCoordinator: ObservableObject {
                 frameRate: settings.captureFrameRate
             )
         } catch {
+            // Stopped (or restarted) while starting: that stop already cleaned up and
+            // may have begun a new session — leave it alone, and don't show an error
+            guard sessions.isCurrent(session) else {
+                GameLog.log("Start was stopped before capture began")
+                return
+            }
             GameLog.log("✗ Capture failed to start: \(error.localizedDescription)")
             await tearDown()
             lastError = error.localizedDescription
             throw error
         }
+
+        // Stopped right after capture started — teardown already stopped the stream
+        guard sessions.isCurrent(session) else { return }
 
         GameLog.log("✓ Capture started successfully")
         status = .running
@@ -165,6 +178,7 @@ final class PipelineCoordinator: ObservableObject {
 
     /// Return to the idle state: used by stop() and when start() fails part-way
     private func tearDown() async {
+        sessions.invalidate()
         isRunning = false
 
         // Drop queued frames and stop the in-flight pipeline, so nothing is

@@ -31,26 +31,51 @@ struct WindowGoneDetector {
     }
 }
 
+/// Tells which start is the current one. Every new start and every stop moves it on,
+/// so a start that is still awaiting (e.g. `SCStream.startCapture()`) can see
+/// afterwards that it was stopped or replaced and must not keep its result.
+struct StartGeneration {
+    private(set) var current = 0
+
+    /// Begin a new start; returns its token
+    mutating func begin() -> Int {
+        current += 1
+        return current
+    }
+
+    /// A stop happened: every start still in flight is outdated
+    mutating func invalidate() {
+        current += 1
+    }
+
+    func isCurrent(_ token: Int) -> Bool {
+        token == current
+    }
+}
+
 /// Service that captures frames from a selected window using ScreenCaptureKit
 final class ScreenCaptureService: NSObject, @unchecked Sendable {
     weak var delegate: ScreenCaptureDelegate?
 
+    private let captureQueue = DispatchQueue(label: "com.worawalan.GameTranslator.capture", qos: .userInitiated)
+
+    // Everything below is guarded by `sessionLock`: start and stop run concurrently
+    // (a stop can arrive while a start is awaiting) and callbacks come from the
+    // capture queue and SCStream's delegate queue.
+    private let sessionLock = NSLock()
     private var stream: SCStream?
     private var streamOutput: StreamOutput?
     private var selectedWindow: SCWindow?
-    private var isCapturing = false
-    private let captureQueue = DispatchQueue(label: "com.worawalan.GameTranslator.capture", qos: .userInitiated)
+    private var starts = StartGeneration()
 
     /// The running stream and its window. Cleared by stopCapture() before the stream
     /// is stopped, so callbacks from our own stop (or an old stream) are ignored.
-    /// Guarded by `sessionLock` — read from the capture queue and SCStream's delegate queue.
     private struct ActiveSession {
         let streamID: ObjectIdentifier
         let windowID: CGWindowID
     }
     private var activeSession: ActiveSession?
     private var watchdogTimer: DispatchSourceTimer?
-    private let sessionLock = NSLock()
 
     /// Get list of available windows for capture
     /// Bundle identifiers of system UI that owns full-screen or decorative windows.
@@ -96,11 +121,13 @@ final class ScreenCaptureService: NSObject, @unchecked Sendable {
         }
     }
 
-    /// Start capturing the selected window
+    /// Start capturing the selected window. Throws `CancellationError` if
+    /// stopCapture() (or another start) ran while this start was in progress.
     func startCapture(window: SCWindow, frameRate: Double = 5.0) async throws {
-        guard !isCapturing else { return }
-
-        selectedWindow = window
+        // Replace whatever is running — including a stream left by an interrupted
+        // start — instead of skipping the new window and capturing the old one
+        await stopCapture()
+        let generation = sessionLock.withLock { starts.begin() }
 
         let filter = SCContentFilter(desktopIndependentWindow: window)
 
@@ -116,38 +143,58 @@ final class ScreenCaptureService: NSObject, @unchecked Sendable {
         let stream = SCStream(filter: filter, configuration: config, delegate: self)
 
         let output = StreamOutput { [weak self] image in
-            guard let self = self, let window = self.selectedWindow else { return }
+            guard let self, self.sessionLock.withLock({ self.starts.isCurrent(generation) }) else { return }
             self.delegate?.screenCaptureService(self, didCaptureFrame: image, contentRect: window.frame)
         }
-        self.streamOutput = output
 
         try stream.addStreamOutput(output, type: .screen, sampleHandlerQueue: captureQueue)
         try await stream.startCapture()
 
-        self.stream = stream
-        self.isCapturing = true
-
+        // Keep the stream only if nothing stopped or replaced this start meanwhile.
+        // The watchdog is running before the check so a stop right after it always
+        // finds (and cancels) it.
         let session = ActiveSession(streamID: ObjectIdentifier(stream), windowID: window.windowID)
-        sessionLock.withLock { activeSession = session }
-        startWatchdog(for: session)
+        let watchdog = makeWatchdog(for: session)
+        let isCurrent = sessionLock.withLock { () -> Bool in
+            guard starts.isCurrent(generation) else { return false }
+            self.stream = stream
+            self.streamOutput = output
+            self.selectedWindow = window
+            activeSession = session
+            watchdogTimer = watchdog
+            return true
+        }
+        guard isCurrent else {
+            watchdog.cancel()
+            GameLog.log("Capture start was stopped before it finished — discarding its stream")
+            try? await stream.stopCapture()
+            throw CancellationError()
+        }
     }
 
-    /// Stop capturing
+    /// Stop capturing. Also cancels a start that is still in progress.
     func stopCapture() async {
-        guard isCapturing else { return }
-
-        // Forget the session first: this stop is ours and must not be reported
-        endSession()
-        try? await stream?.stopCapture()
-        stream = nil
-        streamOutput = nil
-        selectedWindow = nil
-        isCapturing = false
+        var timer: DispatchSourceTimer?
+        let running = sessionLock.withLock { () -> SCStream? in
+            starts.invalidate()
+            // Forget the session before stopping: this stop is ours and must not be reported
+            let running = stream
+            stream = nil
+            streamOutput = nil
+            selectedWindow = nil
+            activeSession = nil
+            timer = watchdogTimer
+            watchdogTimer = nil
+            return running
+        }
+        timer?.cancel()
+        try? await running?.stopCapture()
     }
 
     /// Update capture frame rate
     func updateFrameRate(_ frameRate: Double) async throws {
-        guard let stream = stream, let window = selectedWindow else { return }
+        let (stream, window) = sessionLock.withLock { (self.stream, selectedWindow) }
+        guard let stream, let window else { return }
 
         let config = SCStreamConfiguration()
         config.width = Int(window.frame.width) * 2
@@ -162,10 +209,11 @@ final class ScreenCaptureService: NSObject, @unchecked Sendable {
 
     // MARK: - Unexpected stop
 
-    /// Check once a second that the captured window still exists. ScreenCaptureKit
-    /// doesn't reliably report a closed window: capture can even start on a window
-    /// whose app already quit and then deliver no frames.
-    private func startWatchdog(for session: ActiveSession) {
+    /// A running timer that checks once a second that the captured window still
+    /// exists. ScreenCaptureKit doesn't reliably report a closed window: capture can
+    /// even start on a window whose app already quit and then deliver no frames.
+    /// Reports are ignored unless `session` is still the active one.
+    private func makeWatchdog(for session: ActiveSession) -> DispatchSourceTimer {
         let timer = DispatchSource.makeTimerSource(queue: captureQueue)
         var detector = WindowGoneDetector()
         timer.schedule(deadline: .now() + 1, repeating: 1)
@@ -175,18 +223,8 @@ final class ScreenCaptureService: NSObject, @unchecked Sendable {
                 self?.reportUnexpectedStop(of: session, reason: .windowClosed)
             }
         }
-        sessionLock.withLock { watchdogTimer = timer }
         timer.resume()
-    }
-
-    /// Forget the active session and stop the watchdog
-    private func endSession() {
-        let timer = sessionLock.withLock { () -> DispatchSourceTimer? in
-            activeSession = nil
-            defer { watchdogTimer = nil }
-            return watchdogTimer
-        }
-        timer?.cancel()
+        return timer
     }
 
     /// Tell the delegate once, and only if `session` is still the running one
@@ -218,7 +256,7 @@ final class ScreenCaptureService: NSObject, @unchecked Sendable {
 
     /// Get the current game window frame
     var currentWindowFrame: CGRect? {
-        guard let windowID = selectedWindow?.windowID else { return nil }
+        guard let windowID = sessionLock.withLock({ selectedWindow?.windowID }) else { return nil }
 
         let windowList = CGWindowListCopyWindowInfo([.optionIncludingWindow], windowID) as? [[String: Any]]
         guard let windowInfo = windowList?.first,

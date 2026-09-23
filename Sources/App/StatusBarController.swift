@@ -359,7 +359,8 @@ final class StatusBarController: NSObject, ObservableObject {
                 selectedWindowTitle = window.title ?? "Unknown"
                 try await pipeline.start(window: window)
                 rebuildMenu()
-                updateStatusIcon(running: true)
+                // start() returns without error when it was stopped while starting
+                updateStatusIcon(running: pipeline.isRunning)
             } catch {
                 showAlert(title: "เริ่มจับภาพไม่ได้", message: error.localizedDescription)
             }
