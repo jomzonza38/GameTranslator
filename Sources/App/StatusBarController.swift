@@ -71,8 +71,10 @@ final class StatusBarController: NSObject, ObservableObject {
         }
     }
 
+    /// Refill the menu (one NSMenu for the app's lifetime; see menuNeedsUpdate)
     func rebuildMenu() {
-        let menu = NSMenu()
+        let menu = self.menu ?? makeMenu()
+        menu.removeAllItems()
 
         // Status
         let statusItem = NSMenuItem(title: "สถานะ: \(pipeline.status.displayName)", action: nil, keyEquivalent: "")
@@ -296,9 +298,14 @@ final class StatusBarController: NSObject, ObservableObject {
         let quitItem = NSMenuItem(title: "ออกจากโปรแกรม", action: #selector(quitApp), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
+    }
 
+    private func makeMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.delegate = self
         self.menu = menu
-        self.statusItem?.menu = menu
+        statusItem?.menu = menu
+        return menu
     }
 
     // MARK: - Actions
@@ -630,5 +637,15 @@ final class StatusBarController: NSObject, ObservableObject {
         case .cyan:   return "🔵"
         case .red:    return "🔴"
         }
+    }
+}
+
+// MARK: - NSMenuDelegate
+
+extension StatusBarController: NSMenuDelegate {
+    /// Refill the menu each time it opens, so status, the latest error, stats and
+    /// DeepL usage are current — without rebuilding it for every captured frame
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        rebuildMenu()
     }
 }
