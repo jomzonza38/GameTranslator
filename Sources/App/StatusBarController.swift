@@ -313,10 +313,7 @@ final class StatusBarController: NSObject, ObservableObject {
                 // the system permission dialog
                 GameLog.log("Cannot list windows: \(error.localizedDescription)")
                 if !CGPreflightScreenCaptureAccess() {
-                    self.showAlert(
-                        title: "ต้องอนุญาต Screen Recording",
-                        message: "กรุณาเปิด System Settings → Privacy & Security → Screen & System Audio Recording แล้วเปิดสวิตช์ GameTranslator\n\nหลังเปิดแล้วกรุณาปิดแอปแล้วเปิดใหม่"
-                    )
+                    ScreenRecordingPermission.showInstructions()
                 } else {
                     self.showAlert(title: "ไม่สามารถดึงรายการ Window ได้", message: error.localizedDescription)
                 }

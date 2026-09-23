@@ -82,34 +82,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        GameLog.log("Screen Recording permission not granted — asking once")
+        // Let macOS show its own "record this screen" dialog (it has an
+        // "Open System Settings" button and adds the app to the list). Showing our
+        // own alert first meant two dialogs in a row. If the user denied before,
+        // macOS stays silent; picking a window then shows our instructions.
+        GameLog.log("Screen Recording permission not granted — requesting")
         defaults.set(true, forKey: awaitingPermissionKey)
-        showPermissionAlert()
-    }
-
-    private func showPermissionAlert() {
-        NSApp.activate(ignoringOtherApps: true)
-
-        let alert = NSAlert()
-        alert.messageText = "ต้องอนุญาต Screen Recording"
-        alert.informativeText = """
-            1. กด "เปิด System Settings"
-            2. เปิดสวิตช์ GameTranslator ใน Screen & System Audio Recording
-            3. กด "ออกและเปิดใหม่" (Quit & Reopen) — แอปจะเปิดกลับมาพร้อมข้อความบอกวิธีใช้
-
-            ถ้าเห็น GameTranslator หลายรายการ ให้ลบอันเก่าออก (ปุ่ม −) แล้วเปิดสวิตช์อันที่เหลือ
-            """
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "เปิด System Settings")
-        alert.addButton(withTitle: "ทีหลัง")
-
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-
-        // Adds the app to the Screen Recording list (once per launch)
         CGRequestScreenCaptureAccess()
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
-            NSWorkspace.shared.open(url)
-        }
     }
 
     /// Opening the app again while it's already running (Finder, Spotlight, Launchpad)
