@@ -277,12 +277,17 @@ final class StatusBarController: NSObject, ObservableObject {
     // MARK: - Actions
 
     @objc private func showWindowPicker() {
-        // Try fetching windows directly via SCShareableContent.
-        // CGPreflightScreenCaptureAccess() caches its result for the process
-        // lifetime, so it returns false even after the user grants permission.
-        // Calling CGRequestScreenCaptureAccess() again re-opens the system
-        // dialog, creating an annoying loop. Instead, just try the real API
-        // and show an informational alert only if it fails.
+        // Without permission, SCShareableContent makes macOS pop its own
+        // "record this screen" dialog on every call — and our alert followed it,
+        // so each click produced two dialogs. Check silently first and only show
+        // our instructions. (A permission granted while the app is running only
+        // takes effect after "Quit & Reopen", which the instructions say.)
+        guard CGPreflightScreenCaptureAccess() else {
+            GameLog.log("Window picker: no Screen Recording permission")
+            ScreenRecordingPermission.showInstructions()
+            return
+        }
+
         Task { @MainActor in
             do {
                 availableWindows = try await ScreenCaptureService.availableWindows()

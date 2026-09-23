@@ -4,6 +4,16 @@ import CoreGraphics
 /// Screen Recording permission helpers
 @MainActor
 enum ScreenRecordingPermission {
+    /// Identifies the installed build (path + executable modification date).
+    /// Each rebuild gets a new code signature, which macOS treats as a new app.
+    static var currentBuildKey: String {
+        let executable = Bundle.main.executableURL
+        let modified = (executable.flatMap {
+            try? FileManager.default.attributesOfItem(atPath: $0.path)[.modificationDate] as? Date
+        })?.timeIntervalSince1970 ?? 0
+        return "\(Bundle.main.bundlePath)#\(Int(modified))"
+    }
+
     static let settingsURL = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!
 
     /// Instructions for when the system dialog won't appear any more (the user

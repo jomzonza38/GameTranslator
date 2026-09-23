@@ -86,9 +86,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // "Open System Settings" button and adds the app to the list). Showing our
         // own alert first meant two dialogs in a row. If the user denied before,
         // macOS stays silent; picking a window then shows our instructions.
-        GameLog.log("Screen Recording permission not granted — requesting")
         defaults.set(true, forKey: awaitingPermissionKey)
-        CGRequestScreenCaptureAccess()
+
+        // Ask macOS at most once per installed build. Asking on every launch made the
+        // dialog come back each time the app was opened before permission was given.
+        // A new build (new code signature) needs its own request, hence the build key.
+        let buildKey = ScreenRecordingPermission.currentBuildKey
+        if defaults.string(forKey: "screenCaptureRequestedForBuild") != buildKey {
+            defaults.set(buildKey, forKey: "screenCaptureRequestedForBuild")
+            GameLog.log("Screen Recording permission not granted — requesting (build \(buildKey))")
+            CGRequestScreenCaptureAccess()
+        } else {
+            GameLog.log("Screen Recording permission not granted — already asked for this build")
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                self?.statusBarController?.showWelcome()
+            }
+        }
     }
 
     /// Opening the app again while it's already running (Finder, Spotlight, Launchpad)
