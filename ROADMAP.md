@@ -1,0 +1,71 @@
+# ROADMAP — GameTranslator
+
+Owned by **Cowork** (WHAT and WHY). Claude Code reads it for context but does not
+change goals or priorities. Workflow: `WORKFLOW.md`.
+
+## Product
+
+macOS menu bar app that reads text from a game window (ScreenCaptureKit + Vision
+OCR), translates it to Thai (Google, DeepL, OpenAI, Claude) and shows it as an
+overlay or floating panel. Users: Thai players of English / Japanese / Chinese /
+Korean games. Current version: see `CFBundleShortVersionString` in
+`Resources/Info.plist` (1.11.11 on 2026-09-23).
+
+## Standing quality goals (always in force)
+
+From the owner — every task must keep these (details in `CLAUDE.md`):
+1. Rebuilding never brings back the Screen Recording permission prompt.
+2. The app never crashes or freezes after it asks the user to reopen, or when the
+   game is closed and started again.
+3. The build and unit tests never break.
+
+## Milestones
+
+| Milestone | Goal | Status | Tasks |
+|---|---|---|---|
+| M0 — Workflow | Cowork × Claude Code task system in place | done 2026-09-23 | — |
+| M1 — Stability | Close the gaps found in the 2026-09-23 audits that affect the standing goals | in progress | T-0001 … T-0005 |
+| M2 — Reliability & UX | Errors visible to the user, no request storms, correct placement on every display | planned | T-0006 … T-0009 |
+| M3 — … | *To be defined by Cowork with the owner* | — | — |
+
+## Backlog (not yet tasks)
+
+Untriaged items. Cowork decides priority and turns them into tasks; remove an item
+here once it has a task ID (link the task instead).
+
+### From the 2026-09-23 code audit (Claude Code)
+Already fixed on 2026-09-23 (1.11.6 – 1.11.11): Google Free `&`/`+` encoding,
+Google batch line shifting, DeepL Free quota counting other providers, OCR `...`
+collapse, concurrent pipelines, in-flight work after stop.
+
+Remaining (now tasks): failed start → T-0001.
+
+### From the 2026-09-23 code audit v1.11.11 (Cowork)
+Full report: project doc `claude/code-audit-2026-09-23-v1.11.11.md`.
+Turned into tasks: game window closed while capturing → T-0002 · stop during start
+→ T-0003 · build.sh hides signing failures → T-0004 · OCR double resume → T-0005 ·
+errors never shown in the menu → T-0006 · Esc in region selector hides overlay →
+T-0007 · batch fallback request storm → T-0008 · multi-monitor coordinates → T-0009.
+
+### Backlog (not yet tasks)
+- **LLM chatter fallback is cached forever** — when a model replies with chatter,
+  `LLMPrompt.sanitize` returns the source text, which is then cached as the
+  "translation" and never retried until the glossary changes or the app restarts.
+- **Translation cache ignores the provider** — after switching provider, cached
+  lines still show the previous provider's translation.
+- **`build.sh` may reset the Screen Recording grant** — `rm -rf` + copy and
+  `codesign --deep` are still suspected (see `CLAUDE.md` gotchas). T-0004 only makes
+  signing failures visible. Related to stability goal 1.
+- **API key field** — every keystroke writes the Keychain, creates a new provider and
+  a new `URLSession` that is never invalidated (leak) and sends a warm-up request;
+  keys are not trimmed (pasted whitespace → 401).
+- **Game window resize / FPS change while running** — stream size is fixed at start
+  (`frame × 2`); `updateFrameRate` is never called.
+- **Test coverage gap** — providers, `OCRService` and `PipelineCoordinator` have few
+  or no unit tests; most recent bugs were in these areas.
+- Minor: data races hidden by `@unchecked Sendable` (OCR settings, provider swap,
+  AppSettings read off-main); `overlayBackgroundOpacity = 0` not persisted (`nonZero`);
+  DeepL 403 shown as "API key not set", DeepL >50 texts per request; Google Cloud key
+  in URL query; `CIContext` per frame; `TranslationCache` LRU O(n); TextTracker /
+  layout on the main actor every frame; `GameLog` not thread-safe and logs all game
+  text to the Desktop; several window pickers can be open at once.
