@@ -411,6 +411,12 @@ private struct OverlaySettingsTab: View {
                 Text("แสดงข้อความต้นฉบับใต้คำแปลภาษาไทย")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+
+                Toggle("แสดงหน้าต้อนรับตอนเปิดแอป", isOn: $settings.showWelcomeOnLaunch)
+
+                Text("บอกว่าแอปทำงานแล้วและไอคอนอยู่ตรงไหนบนแถบเมนู")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)

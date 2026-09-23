@@ -66,11 +66,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if CGPreflightScreenCaptureAccess() {
             GameLog.log("Screen Recording permission granted \u{2713}")
-            if defaults.bool(forKey: awaitingPermissionKey) {
-                defaults.removeObject(forKey: awaitingPermissionKey)
-                Task { @MainActor [weak self] in
-                    try? await Task.sleep(nanoseconds: 500_000_000)
+            let justGranted = defaults.bool(forKey: awaitingPermissionKey)
+            defaults.removeObject(forKey: awaitingPermissionKey)
+
+            Task { @MainActor [weak self] in
+                // Give the menu bar item a moment to appear before pointing at it
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                if justGranted {
                     self?.statusBarController?.presentWindowPicker()
+                } else if AppSettings.shared.showWelcomeOnLaunch {
+                    self?.statusBarController?.showWelcome()
                 }
             }
             return
@@ -104,6 +109,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
             NSWorkspace.shared.open(url)
         }
+    }
+
+    /// Opening the app again while it's already running (Finder, Spotlight, Launchpad)
+    /// reaches the running copy — show where it is instead of doing nothing.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        statusBarController?.showWelcome()
+        return false
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

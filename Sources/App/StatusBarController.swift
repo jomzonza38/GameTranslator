@@ -11,6 +11,8 @@ final class StatusBarController: NSObject, ObservableObject {
     private var menu: NSMenu?
     private var settingsWindow: NSWindow?
     private var historyWindow: NSWindow?
+    private var welcomePopover: NSPopover?
+    private var welcomeWindow: NSWindow?
 
     let pipeline = PipelineCoordinator()
 
@@ -251,6 +253,11 @@ final class StatusBarController: NSObject, ObservableObject {
         historyItem.target = self
         menu.addItem(historyItem)
 
+        // How to use
+        let helpItem = NSMenuItem(title: "❓ วิธีใช้", action: #selector(showWelcomeAction), keyEquivalent: "")
+        helpItem.target = self
+        menu.addItem(helpItem)
+
         // Settings
         let settingsItem = NSMenuItem(title: "⚙️ ตั้งค่า...", action: #selector(openSettings), keyEquivalent: ",")
         settingsItem.target = self
@@ -328,6 +335,83 @@ final class StatusBarController: NSObject, ObservableObject {
                 showAlert(title: "เริ่มจับภาพไม่ได้", message: error.localizedDescription)
             }
         }
+    }
+
+    // MARK: - Welcome
+
+    @objc private func showWelcomeAction() {
+        showWelcome()
+    }
+
+    /// Tell the user the app is running and where to find it. Points at the menu bar
+    /// icon when it's visible; otherwise (hidden behind the notch or by a full-screen
+    /// app) shows a small window near the top of the screen.
+    func showWelcome() {
+        dismissWelcome()
+
+        let view = WelcomeView(
+            onPickGame: { [weak self] in
+                self?.dismissWelcome()
+                self?.presentWindowPicker()
+            },
+            onOpenSettings: { [weak self] in
+                self?.dismissWelcome()
+                self?.openSettings()
+            },
+            onClose: { [weak self] in
+                self?.dismissWelcome()
+            }
+        )
+
+        NSApp.activate(ignoringOtherApps: true)
+
+        if let button = statusItem?.button, isOnScreen(button) {
+            let popover = NSPopover()
+            popover.behavior = .transient
+            popover.contentViewController = NSHostingController(rootView: view)
+            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            welcomePopover = popover
+            return
+        }
+
+        let window = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 420, height: 300),
+            styleMask: [.titled, .closable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "Game Translator"
+        window.titlebarAppearsTransparent = true
+        window.isReleasedWhenClosed = false
+        window.level = .floating
+        window.contentView = NSHostingView(rootView: view)
+        window.setContentSize(window.contentView?.fittingSize ?? NSSize(width: 420, height: 300))
+        if let screen = NSScreen.main {
+            let visible = screen.visibleFrame
+            window.setFrameTopLeftPoint(NSPoint(
+                x: visible.maxX - window.frame.width - 20,
+                y: visible.maxY - 10
+            ))
+        } else {
+            window.center()
+        }
+        window.makeKeyAndOrderFront(nil)
+        welcomeWindow = window
+    }
+
+    private func dismissWelcome() {
+        welcomePopover?.performClose(nil)
+        welcomePopover = nil
+        welcomeWindow?.close()
+        welcomeWindow = nil
+    }
+
+    /// Whether the status item button is actually visible on a screen
+    private func isOnScreen(_ button: NSStatusBarButton) -> Bool {
+        guard let window = button.window, window.isVisible, window.occlusionState.contains(.visible) else {
+            return false
+        }
+        return NSScreen.screens.contains { $0.frame.intersects(window.frame) }
     }
 
     /// Open the window picker (used after Screen Recording was just granted)

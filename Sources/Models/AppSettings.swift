@@ -242,6 +242,11 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(minimumConfidence, forKey: "minimumConfidence") }
     }
 
+    /// Show the "app is running — look at the menu bar" window at launch
+    @Published var showWelcomeOnLaunch: Bool {
+        didSet { defaults.set(showWelcomeOnLaunch, forKey: "showWelcomeOnLaunch") }
+    }
+
     @Published var showOriginalText: Bool {
         didSet { defaults.set(showOriginalText, forKey: "showOriginalText") }
     }
@@ -332,6 +337,7 @@ final class AppSettings: ObservableObject {
         self.ocrAccuracy = OCRAccuracy(rawValue: defaults.string(forKey: "ocrAccuracy") ?? "") ?? .fast
         self.sourceLanguage = SourceLanguage(rawValue: defaults.string(forKey: "sourceLanguage") ?? "") ?? .english
         self.showOriginalText = defaults.object(forKey: "showOriginalText") as? Bool ?? false
+        self.showWelcomeOnLaunch = defaults.object(forKey: "showWelcomeOnLaunch") as? Bool ?? true
 
         let modeRaw = defaults.string(forKey: "displayMode") ?? DisplayMode.overlay.rawValue
         self.displayMode = DisplayMode(rawValue: modeRaw) ?? .overlay
