@@ -41,6 +41,17 @@ final class AppSettings: ObservableObject {
             }
         }
 
+        /// Keychain account holding this provider's API key (nil = no key needed)
+        var keychainAccount: String? {
+            switch self {
+            case .googleFree: return nil
+            case .openAI: return "openAIApiKey"
+            case .claudeHaiku: return "claudeApiKey"
+            case .deeplFree, .deeplPro: return "deeplApiKey"
+            case .googleCloud: return "googleCloudApiKey"
+            }
+        }
+
         var requiresApiKey: Bool {
             switch self {
             case .googleFree: return false
@@ -156,23 +167,26 @@ final class AppSettings: ObservableObject {
     }
 
     @Published var selectedProvider: TranslationProviderType {
-        didSet { defaults.set(selectedProvider.rawValue, forKey: "selectedProvider") }
+        didSet {
+            defaults.set(selectedProvider.rawValue, forKey: "selectedProvider")
+            loadApiKeyIfNeeded(for: selectedProvider)
+        }
     }
 
     @Published var deeplApiKey: String {
-        didSet { KeychainStore.set(deeplApiKey, for: "deeplApiKey") }
+        didSet { storeApiKey(deeplApiKey, account: "deeplApiKey") }
     }
 
     @Published var googleCloudApiKey: String {
-        didSet { KeychainStore.set(googleCloudApiKey, for: "googleCloudApiKey") }
+        didSet { storeApiKey(googleCloudApiKey, account: "googleCloudApiKey") }
     }
 
     @Published var openAIApiKey: String {
-        didSet { KeychainStore.set(openAIApiKey, for: "openAIApiKey") }
+        didSet { storeApiKey(openAIApiKey, account: "openAIApiKey") }
     }
 
     @Published var claudeApiKey: String {
-        didSet { KeychainStore.set(claudeApiKey, for: "claudeApiKey") }
+        didSet { storeApiKey(claudeApiKey, account: "claudeApiKey") }
     }
 
     // MARK: - Capture Settings
@@ -298,10 +312,10 @@ final class AppSettings: ObservableObject {
         let providerRaw = defaults.string(forKey: "selectedProvider") ?? TranslationProviderType.googleFree.rawValue
         self.selectedProvider = TranslationProviderType(rawValue: providerRaw) ?? .googleFree
 
-        self.deeplApiKey = Self.loadApiKey("deeplApiKey", defaults: defaults)
-        self.googleCloudApiKey = Self.loadApiKey("googleCloudApiKey", defaults: defaults)
-        self.openAIApiKey = Self.loadApiKey("openAIApiKey", defaults: defaults)
-        self.claudeApiKey = Self.loadApiKey("claudeApiKey", defaults: defaults)
+        self.deeplApiKey = ""
+        self.googleCloudApiKey = ""
+        self.openAIApiKey = ""
+        self.claudeApiKey = ""
 
         self.captureFrameRate = defaults.double(forKey: "captureFrameRate").nonZero ?? 5.0
 
@@ -331,9 +345,43 @@ final class AppSettings: ObservableObject {
         self.captureRegions = loadCaptureRegions()
 
         checkAndResetMonthlyUsage()
+
+        // Only the selected provider's key is read now; each Keychain read of an
+        // item can trigger a macOS access prompt, so other keys load on demand.
+        loadApiKeyIfNeeded(for: selectedProvider)
     }
 
     // MARK: - API Key Storage
+
+    /// Keychain accounts already read this session
+    private var loadedKeyAccounts: Set<String> = []
+    /// Set while assigning a value read from the Keychain, so it isn't written back
+    private var isLoadingApiKey = false
+
+    /// Read the provider's API key from the Keychain the first time it is needed
+    func loadApiKeyIfNeeded(for provider: TranslationProviderType) {
+        guard let account = provider.keychainAccount, !loadedKeyAccounts.contains(account) else { return }
+        loadedKeyAccounts.insert(account)
+
+        let value = Self.loadApiKey(account, defaults: defaults)
+        guard !value.isEmpty else { return }
+
+        isLoadingApiKey = true
+        defer { isLoadingApiKey = false }
+        switch account {
+        case "deeplApiKey": deeplApiKey = value
+        case "googleCloudApiKey": googleCloudApiKey = value
+        case "openAIApiKey": openAIApiKey = value
+        case "claudeApiKey": claudeApiKey = value
+        default: break
+        }
+    }
+
+    private func storeApiKey(_ value: String, account: String) {
+        guard !isLoadingApiKey else { return }
+        loadedKeyAccounts.insert(account)
+        KeychainStore.set(value, for: account)
+    }
 
     /// Load an API key from the Keychain. Keys saved by older versions in
     /// UserDefaults are moved into the Keychain and removed from UserDefaults.

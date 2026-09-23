@@ -80,7 +80,7 @@ GitHub Actions runs the tests and a Release build on every push to `main`; the b
 
 API keys for paid providers are entered in the app's Settings window and stored in the macOS Keychain — they are never part of this repository.
 
-Because the app is ad-hoc signed, macOS may ask to allow Keychain access after a rebuild. Choose **Always Allow**.
+`build.sh` signs the app with your **Apple Development** certificate when one is installed (or `SIGN_IDENTITY=... ./build.sh`). With a real certificate macOS remembers Keychain "Always Allow" and the Screen Recording permission across rebuilds; with ad-hoc signing it asks again after every build.
 
 ## Project structure
 

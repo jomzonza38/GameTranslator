@@ -3,6 +3,23 @@ set -eo pipefail
 
 cd "$(dirname "$0")"
 
+# --- Pick a code signing identity ---
+# A real certificate keeps the app's identity stable across rebuilds, so macOS
+# remembers Keychain "Always Allow" and the Screen Recording permission.
+# Ad-hoc signing ("-") creates a new identity every build and macOS asks again.
+# Override with: SIGN_IDENTITY="Apple Development: Name (TEAMID)" ./build.sh
+if [ -z "${SIGN_IDENTITY:-}" ]; then
+    SIGN_IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null \
+        | grep -E '"(Apple Development|Developer ID Application|GameTranslator Local Signing)' \
+        | head -1 | sed -E 's/.*"(.*)"/\1/' || true)
+fi
+SIGN_IDENTITY="${SIGN_IDENTITY:--}"
+if [ "$SIGN_IDENTITY" = "-" ]; then
+    echo "⚠️  ไม่พบ certificate สำหรับ sign — ใช้ ad-hoc (macOS จะถามสิทธิ์ Keychain/Screen Recording ใหม่ทุกครั้งที่ build)"
+else
+    echo "🔏 Sign ด้วย: $SIGN_IDENTITY"
+fi
+
 echo "🔧 Generating Xcode project..."
 xcodegen generate
 
@@ -65,12 +82,11 @@ echo "🧹 ลบ build output .app (ป้องกันแอพซ้ำใ�
 # --- Ad-hoc sign with entitlements ---
 ENT="Resources/GameTranslator.entitlements"
 if [ -f "$ENT" ]; then
-    codesign --force --deep --sign - --entitlements "$ENT" --timestamp=none "$TARGET" 2>&1 || true
-    echo "🔏 Ad-hoc signed with entitlements"
+    codesign --force --deep --sign "$SIGN_IDENTITY" --entitlements "$ENT" --timestamp=none "$TARGET" 2>&1 || true
 else
-    codesign --force --deep --sign - --timestamp=none "$TARGET" 2>&1 || true
-    echo "🔏 Ad-hoc signed"
+    codesign --force --deep --sign "$SIGN_IDENTITY" --timestamp=none "$TARGET" 2>&1 || true
 fi
+echo "🔏 Signed ($SIGN_IDENTITY)"
 
 # --- Clear quarantine attribute ---
 xattr -cr "$TARGET"
@@ -82,8 +98,11 @@ killall GameTranslator 2>/dev/null && echo "🔄 ปิดแอพเก่า"
 # --- Reset stale TCC entries for this bundle ID ---
 # Ad-hoc signing creates a new code signature each build, leaving
 # stale entries in the Screen Recording permission list.
-tccutil reset ScreenCapture com.worawalan.GameTranslator 2>/dev/null || true
-echo "🔑 ล้าง Screen Recording permission เก่า (ป้องกัน entry ซ้ำ)"
+# Only needed for ad-hoc builds — a stable certificate keeps the existing grant.
+if [ "$SIGN_IDENTITY" = "-" ]; then
+    tccutil reset ScreenCapture com.worawalan.GameTranslator 2>/dev/null || true
+    echo "🔑 ล้าง Screen Recording permission เก่า (ป้องกัน entry ซ้ำ)"
+fi
 
 echo ""
 echo "🚀 เปิดแอพ..."
