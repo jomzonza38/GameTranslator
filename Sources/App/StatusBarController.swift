@@ -9,6 +9,7 @@ final class StatusBarController: NSObject, ObservableObject {
     private var statusItem: NSStatusItem?
     private var menu: NSMenu?
     private var settingsWindow: NSWindow?
+    private var historyWindow: NSWindow?
 
     let pipeline = PipelineCoordinator()
 
@@ -209,6 +210,12 @@ final class StatusBarController: NSObject, ObservableObject {
 
         menu.addItem(NSMenuItem.separator())
 
+        // History
+        let historyItem = NSMenuItem(title: "📜 ประวัติคำแปล...", action: #selector(openHistory), keyEquivalent: "l")
+        historyItem.keyEquivalentModifierMask = [.command, .shift]
+        historyItem.target = self
+        menu.addItem(historyItem)
+
         // Settings
         let settingsItem = NSMenuItem(title: "⚙️ ตั้งค่า...", action: #selector(openSettings), keyEquivalent: ",")
         settingsItem.target = self
@@ -316,6 +323,25 @@ final class StatusBarController: NSObject, ObservableObject {
         }
 
         settingsWindow?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    @objc private func openHistory() {
+        if historyWindow == nil {
+            let window = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 480, height: 560),
+                styleMask: [.titled, .closable, .miniaturizable, .resizable],
+                backing: .buffered,
+                defer: false
+            )
+            window.title = "Game Translator — ประวัติคำแปล"
+            window.center()
+            window.isReleasedWhenClosed = false
+            window.contentView = NSHostingView(rootView: HistoryView())
+            historyWindow = window
+        }
+
+        historyWindow?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 

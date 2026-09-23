@@ -447,6 +447,11 @@ final class PipelineCoordinator: ObservableObject {
                     guard let translation = translations[text] else { continue }
                     state.cachedTranslations[text] = translation
                     rememberLine(original: text, translation: translation)
+                    TranslationHistory.shared.add(
+                        original: text,
+                        translation: translation,
+                        game: settings.currentProfile.title
+                    )
                     GameLog.log("\u{2713} \"\(text)\" \u{2192} \"\(translation)\"")
                 }
             }
