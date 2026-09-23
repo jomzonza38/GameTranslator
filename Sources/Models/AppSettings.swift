@@ -1,7 +1,7 @@
 import Foundation
 import CoreGraphics
 
-/// Persisted app settings backed by UserDefaults
+/// Persisted app settings backed by UserDefaults (API keys live in the Keychain)
 final class AppSettings: ObservableObject {
     static let shared = AppSettings()
 
@@ -70,19 +70,19 @@ final class AppSettings: ObservableObject {
     }
 
     @Published var deeplApiKey: String {
-        didSet { defaults.set(deeplApiKey, forKey: "deeplApiKey") }
+        didSet { KeychainStore.set(deeplApiKey, for: "deeplApiKey") }
     }
 
     @Published var googleCloudApiKey: String {
-        didSet { defaults.set(googleCloudApiKey, forKey: "googleCloudApiKey") }
+        didSet { KeychainStore.set(googleCloudApiKey, for: "googleCloudApiKey") }
     }
 
     @Published var openAIApiKey: String {
-        didSet { defaults.set(openAIApiKey, forKey: "openAIApiKey") }
+        didSet { KeychainStore.set(openAIApiKey, for: "openAIApiKey") }
     }
 
     @Published var claudeApiKey: String {
-        didSet { defaults.set(claudeApiKey, forKey: "claudeApiKey") }
+        didSet { KeychainStore.set(claudeApiKey, for: "claudeApiKey") }
     }
 
     // MARK: - Capture Settings
@@ -145,10 +145,10 @@ final class AppSettings: ObservableObject {
         let providerRaw = defaults.string(forKey: "selectedProvider") ?? TranslationProviderType.googleFree.rawValue
         self.selectedProvider = TranslationProviderType(rawValue: providerRaw) ?? .googleFree
 
-        self.deeplApiKey = defaults.string(forKey: "deeplApiKey") ?? ""
-        self.googleCloudApiKey = defaults.string(forKey: "googleCloudApiKey") ?? ""
-        self.openAIApiKey = defaults.string(forKey: "openAIApiKey") ?? ""
-        self.claudeApiKey = defaults.string(forKey: "claudeApiKey") ?? ""
+        self.deeplApiKey = Self.loadApiKey("deeplApiKey", defaults: defaults)
+        self.googleCloudApiKey = Self.loadApiKey("googleCloudApiKey", defaults: defaults)
+        self.openAIApiKey = Self.loadApiKey("openAIApiKey", defaults: defaults)
+        self.claudeApiKey = Self.loadApiKey("claudeApiKey", defaults: defaults)
 
         self.captureFrameRate = defaults.double(forKey: "captureFrameRate").nonZero ?? 5.0
 
@@ -172,6 +172,26 @@ final class AppSettings: ObservableObject {
         self.captureRegions = loadCaptureRegions()
 
         checkAndResetMonthlyUsage()
+    }
+
+    // MARK: - API Key Storage
+
+    /// Load an API key from the Keychain. Keys saved by older versions in
+    /// UserDefaults are moved into the Keychain and removed from UserDefaults.
+    private static func loadApiKey(_ account: String, defaults: UserDefaults) -> String {
+        if let legacy = defaults.string(forKey: account) {
+            if legacy.isEmpty {
+                defaults.removeObject(forKey: account)
+            } else if KeychainStore.set(legacy, for: account) {
+                // Only drop the plaintext copy once the Keychain write succeeded
+                defaults.removeObject(forKey: account)
+                GameLog.log("Migrated \(account) from UserDefaults to Keychain")
+                return legacy
+            } else {
+                return legacy
+            }
+        }
+        return KeychainStore.get(account) ?? ""
     }
 
     // MARK: - Capture Regions Persistence
