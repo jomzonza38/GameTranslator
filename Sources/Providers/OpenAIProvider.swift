@@ -69,14 +69,6 @@ final class OpenAIProvider: LLMChatProvider {
                 throw TranslationError.invalidResponse
             }
 
-            // Track token usage
-            if let usage = json["usage"] as? [String: Any],
-               let totalTokens = usage["total_tokens"] as? Int {
-                await MainActor.run {
-                    AppSettings.shared.addCharacterUsage(totalTokens)
-                }
-            }
-
             return content.trimmingCharacters(in: .whitespacesAndNewlines)
         } catch let error as TranslationError {
             throw error

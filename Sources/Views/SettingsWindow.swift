@@ -179,30 +179,33 @@ private struct TranslationSettingsTab: View {
                 }
             }
 
-            Section("การใช้งาน") {
-                HStack {
-                    Text("ใช้ไปแล้วเดือนนี้:")
-                    Spacer()
-                    Text("\(formatNumber(settings.monthlyCharacterCount)) ตัวอักษร")
-                        .foregroundStyle(settings.isNearLimit() ? .red : .primary)
-                }
-
-                if let remaining = settings.remainingCharacters {
+            // Only DeepL Free counts characters (it has a 500K/month limit)
+            if settings.selectedProvider == .deeplFree {
+                Section("การใช้งาน DeepL Free") {
                     HStack {
-                        Text("เหลือ:")
+                        Text("ใช้ไปแล้วเดือนนี้:")
                         Spacer()
-                        Text("\(formatNumber(remaining)) ตัวอักษร")
-                            .foregroundStyle(remaining < 50_000 ? .red : .green)
+                        Text("\(formatNumber(settings.monthlyCharacterCount)) ตัวอักษร")
+                            .foregroundStyle(settings.isNearLimit() ? .red : .primary)
                     }
 
-                    ProgressView(value: Double(settings.monthlyCharacterCount), total: 500_000)
-                        .tint(settings.isNearLimit() ? .red : .blue)
-                }
+                    if let remaining = settings.remainingCharacters {
+                        HStack {
+                            Text("เหลือ:")
+                            Spacer()
+                            Text("\(formatNumber(remaining)) ตัวอักษร")
+                                .foregroundStyle(remaining < 50_000 ? .red : .green)
+                        }
 
-                Button("รีเซ็ตตัวนับ") {
-                    settings.monthlyCharacterCount = 0
+                        ProgressView(value: Double(settings.monthlyCharacterCount), total: 500_000)
+                            .tint(settings.isNearLimit() ? .red : .blue)
+                    }
+
+                    Button("รีเซ็ตตัวนับ") {
+                        settings.monthlyCharacterCount = 0
+                    }
+                    .font(.caption)
                 }
-                .font(.caption)
             }
         }
         .formStyle(.grouped)

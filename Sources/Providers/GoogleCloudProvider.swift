@@ -75,11 +75,6 @@ final class GoogleCloudProvider: TranslationProvider {
 
             let decoded = try JSONDecoder().decode(GoogleTranslateResponse.self, from: data)
 
-            let totalChars = texts.reduce(0) { $0 + $1.count }
-            await MainActor.run {
-                AppSettings.shared.addCharacterUsage(totalChars)
-            }
-
             return decoded.data.translations.map { translation in
                 // Google returns HTML-encoded entities, decode them
                 translation.translatedText

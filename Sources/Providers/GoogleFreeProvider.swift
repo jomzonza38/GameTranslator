@@ -79,10 +79,6 @@ final class GoogleFreeProvider: TranslationProvider {
                 throw TranslationError.invalidResponse
             }
 
-            await MainActor.run {
-                AppSettings.shared.addCharacterUsage(text.count)
-            }
-
             return translated
         } catch let error as TranslationError {
             throw error

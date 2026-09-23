@@ -68,15 +68,6 @@ final class ClaudeProvider: LLMChatProvider {
                 throw TranslationError.invalidResponse
             }
 
-            // Track token usage
-            if let usage = json["usage"] as? [String: Any] {
-                let inputTokens = (usage["input_tokens"] as? Int) ?? 0
-                let outputTokens = (usage["output_tokens"] as? Int) ?? 0
-                await MainActor.run {
-                    AppSettings.shared.addCharacterUsage(inputTokens + outputTokens)
-                }
-            }
-
             return text.trimmingCharacters(in: .whitespacesAndNewlines)
         } catch let error as TranslationError {
             throw error

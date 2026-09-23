@@ -8,6 +8,7 @@ final class DeepLProvider: TranslationProvider {
     let requiresApiKey = true
 
     private let apiKey: String
+    private let isPro: Bool
     private let baseURL: String
     private let session: URLSession
 
@@ -17,6 +18,7 @@ final class DeepLProvider: TranslationProvider {
     ///   - isPro: Whether this is a Pro account (affects API endpoint)
     init(apiKey: String, isPro: Bool = false) {
         self.apiKey = apiKey
+        self.isPro = isPro
         self.name = isPro ? "DeepL Pro" : "DeepL Free"
         self.limitDescription = isPro
             ? "ไม่จำกัด (€5.49/เดือน + €25/ล้านตัวอักษร)"
@@ -107,10 +109,12 @@ final class DeepLProvider: TranslationProvider {
 
             let decoded = try JSONDecoder().decode(DeepLResponse.self, from: data)
 
-            // Track usage
-            let totalChars = texts.reduce(0) { $0 + $1.count }
-            await MainActor.run {
-                AppSettings.shared.addCharacterUsage(totalChars)
+            // Only DeepL Free has a monthly limit the app enforces
+            if !isPro {
+                let totalChars = texts.reduce(0) { $0 + $1.count }
+                await MainActor.run {
+                    AppSettings.shared.addCharacterUsage(totalChars)
+                }
             }
 
             return decoded.translations.map { $0.text }
