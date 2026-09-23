@@ -51,8 +51,8 @@ final class DeepLProvider: TranslationProvider {
 
         var urlComponents = URLComponents(string: baseURL)!
         var queryItems = [
-            URLQueryItem(name: "source_lang", value: mapLanguageCode(from)),
-            URLQueryItem(name: "target_lang", value: mapLanguageCode(to))
+            URLQueryItem(name: "source_lang", value: mapLanguageCode(from, isSource: true)),
+            URLQueryItem(name: "target_lang", value: mapLanguageCode(to, isSource: false))
         ]
         for text in texts {
             queryItems.append(URLQueryItem(name: "text", value: text))
@@ -64,10 +64,13 @@ final class DeepLProvider: TranslationProvider {
         request.setValue("DeepL-Auth-Key \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
 
-        // Build form body manually since we have duplicate "text" keys
+        // Build form body manually since we have duplicate "text" keys.
+        // .urlQueryAllowed leaves &, = and + unescaped, which would split the text.
+        var formAllowed = CharacterSet.urlQueryAllowed
+        formAllowed.remove(charactersIn: "&=+?/")
         let body = queryItems.map { item in
-            let key = item.name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? item.name
-            let value = (item.value ?? "").addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+            let key = item.name.addingPercentEncoding(withAllowedCharacters: formAllowed) ?? item.name
+            let value = (item.value ?? "").addingPercentEncoding(withAllowedCharacters: formAllowed) ?? ""
             return "\(key)=\(value)"
         }.joined(separator: "&")
         request.httpBody = body.data(using: .utf8)
@@ -111,13 +114,16 @@ final class DeepLProvider: TranslationProvider {
     }
 
     /// Map standard language codes to DeepL-specific codes
-    private func mapLanguageCode(_ code: String) -> String {
+    /// DeepL accepts only the base code ("ZH") for source languages,
+    /// but needs the script variant ("ZH-HANS"/"ZH-HANT") for targets.
+    private func mapLanguageCode(_ code: String, isSource: Bool) -> String {
         switch code.lowercased() {
-        case "en": return "EN"
+        case "en": return isSource ? "EN" : "EN-US"
         case "th": return "TH"
         case "ja": return "JA"
-        case "zh": return "ZH-HANS"
         case "ko": return "KO"
+        case "zh", "zh-cn", "zh-hans": return isSource ? "ZH" : "ZH-HANS"
+        case "zh-tw", "zh-hant": return isSource ? "ZH" : "ZH-HANT"
         default: return code.uppercased()
         }
     }

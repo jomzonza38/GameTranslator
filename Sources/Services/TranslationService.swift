@@ -6,8 +6,8 @@ final class TranslationService: @unchecked Sendable {
     private let cache: TranslationCache
     private let settings: AppSettings
 
-    /// Source language code
-    let sourceLanguage = "en"
+    /// Source language code (from Settings)
+    var sourceLanguage: String { settings.sourceLanguage.translationCode }
     /// Target language code
     let targetLanguage = "th"
 

@@ -244,7 +244,9 @@ final class PipelineCoordinator: ObservableObject {
             // Step 1: OCR (whole frame — shared across all regions)
             // Pick up the latest OCR settings every frame so changes apply while running
             ocrService.minimumConfidence = settings.minimumConfidence
-            ocrService.recognitionLevel = settings.ocrAccuracy == .accurate ? .accurate : .fast
+            ocrService.recognitionLevel = settings.effectiveOCRAccuracy == .accurate ? .accurate : .fast
+            ocrService.recognitionLanguages = settings.sourceLanguage.visionLanguages
+            ocrService.minimumTextLength = settings.sourceLanguage.usesWordSpacing ? 2 : 1
 
             let ocrStart = CFAbsoluteTimeGetCurrent()
             let imageSize = CGSize(width: image.width, height: image.height)
@@ -345,7 +347,10 @@ final class PipelineCoordinator: ObservableObject {
         }
 
         // Merge adjacent lines
-        let mergedFrame = Self.mergeAdjacentLines(filteredFrame)
+        let mergedFrame = Self.mergeAdjacentLines(
+            filteredFrame,
+            separator: settings.sourceLanguage.usesWordSpacing ? " " : ""
+        )
 
         // Only log when the detected-text count changes
         if mergedFrame.texts.count != state.lastLoggedTextCount {
@@ -584,7 +589,7 @@ final class PipelineCoordinator: ObservableObject {
 
     // MARK: - Line Merging
 
-    private static func mergeAdjacentLines(_ frame: OCRFrame) -> OCRFrame {
+    private static func mergeAdjacentLines(_ frame: OCRFrame, separator: String = " ") -> OCRFrame {
         guard frame.texts.count > 1 else { return frame }
 
         let lines = frame.texts.sorted { $0.boundingBox.minY < $1.boundingBox.minY }
@@ -613,7 +618,7 @@ final class PipelineCoordinator: ObservableObject {
 
                 guard gapOK && horizontalOK else { break }
 
-                let mergedText = current.text + " " + next.text
+                let mergedText = current.text + separator + next.text
                 let mergedBox = CGRect(
                     x: min(currentBox.minX, nextBox.minX),
                     y: min(currentBox.minY, nextBox.minY),

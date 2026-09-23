@@ -65,6 +65,73 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    // MARK: - Source Language
+
+    enum SourceLanguage: String, CaseIterable, Identifiable {
+        case english = "en"
+        case japanese = "ja"
+        case chineseSimplified = "zh-Hans"
+        case chineseTraditional = "zh-Hant"
+        case korean = "ko"
+
+        var id: String { rawValue }
+
+        var displayName: String {
+            switch self {
+            case .english: return "English"
+            case .japanese: return "日本語 (ญี่ปุ่น)"
+            case .chineseSimplified: return "简体中文 (จีนตัวย่อ)"
+            case .chineseTraditional: return "繁體中文 (จีนตัวเต็ม)"
+            case .korean: return "한국어 (เกาหลี)"
+            }
+        }
+
+        /// Name used inside LLM prompts
+        var englishName: String {
+            switch self {
+            case .english: return "English"
+            case .japanese: return "Japanese"
+            case .chineseSimplified: return "Simplified Chinese"
+            case .chineseTraditional: return "Traditional Chinese"
+            case .korean: return "Korean"
+            }
+        }
+
+        /// Language code passed to translation providers (Google-style)
+        var translationCode: String {
+            switch self {
+            case .english: return "en"
+            case .japanese: return "ja"
+            case .chineseSimplified: return "zh-CN"
+            case .chineseTraditional: return "zh-TW"
+            case .korean: return "ko"
+            }
+        }
+
+        /// Languages for Vision text recognition. English is kept as a fallback
+        /// because game UIs often mix Latin text into CJK scripts.
+        var visionLanguages: [String] {
+            switch self {
+            case .english: return ["en-US"]
+            case .japanese: return ["ja-JP", "en-US"]
+            case .chineseSimplified: return ["zh-Hans", "en-US"]
+            case .chineseTraditional: return ["zh-Hant", "en-US"]
+            case .korean: return ["ko-KR", "en-US"]
+            }
+        }
+
+        /// Vision's fast recognizer only supports Latin scripts
+        var requiresAccurateOCR: Bool { self != .english }
+
+        /// Whether words are separated by spaces (affects merging OCR lines)
+        var usesWordSpacing: Bool {
+            switch self {
+            case .japanese, .chineseSimplified, .chineseTraditional: return false
+            case .english, .korean: return true
+            }
+        }
+    }
+
     // MARK: - OCR Accuracy
 
     enum OCRAccuracy: String, CaseIterable, Identifiable {
@@ -144,6 +211,15 @@ final class AppSettings: ObservableObject {
 
     // MARK: - General
 
+    @Published var sourceLanguage: SourceLanguage {
+        didSet { defaults.set(sourceLanguage.rawValue, forKey: "sourceLanguage") }
+    }
+
+    /// OCR level actually used — non-Latin languages always need .accurate
+    var effectiveOCRAccuracy: OCRAccuracy {
+        sourceLanguage.requiresAccurateOCR ? .accurate : ocrAccuracy
+    }
+
     @Published var ocrAccuracy: OCRAccuracy {
         didSet { defaults.set(ocrAccuracy.rawValue, forKey: "ocrAccuracy") }
     }
@@ -190,6 +266,7 @@ final class AppSettings: ObservableObject {
 
         self.minimumConfidence = defaults.object(forKey: "minimumConfidence") as? Float ?? 0.5
         self.ocrAccuracy = OCRAccuracy(rawValue: defaults.string(forKey: "ocrAccuracy") ?? "") ?? .fast
+        self.sourceLanguage = SourceLanguage(rawValue: defaults.string(forKey: "sourceLanguage") ?? "") ?? .english
         self.showOriginalText = defaults.object(forKey: "showOriginalText") as? Bool ?? false
 
         let modeRaw = defaults.string(forKey: "displayMode") ?? DisplayMode.overlay.rawValue

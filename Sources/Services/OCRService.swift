@@ -13,6 +13,12 @@ final class OCRService: @unchecked Sendable {
     /// Vision recognition level (.fast or .accurate)
     var recognitionLevel: VNRequestTextRecognitionLevel = .fast
 
+    /// Vision recognition languages, in priority order
+    var recognitionLanguages: [String] = ["en-US"]
+
+    /// Minimum characters for a text to be kept (CJK words can be a single character)
+    var minimumTextLength: Int = 2
+
     /// Perform OCR on a CGImage
     /// - Parameters:
     ///   - image: The captured frame
@@ -53,11 +59,11 @@ final class OCRService: @unchecked Sendable {
                         guard !text.isEmpty else { return nil }
 
                         // Filter out very short texts that are likely noise
-                        guard text.count >= 2 else { return nil }
+                        guard text.count >= self.minimumTextLength else { return nil }
 
                         // Clean up common OCR artifacts for better translation
                         text = Self.cleanOCRText(text)
-                        guard !text.isEmpty, text.count >= 2 else { return nil }
+                        guard !text.isEmpty, text.count >= self.minimumTextLength else { return nil }
 
                         // Vision returns bounding box in normalized coordinates
                         // Origin is bottom-left, we need to convert to top-left
@@ -84,7 +90,7 @@ final class OCRService: @unchecked Sendable {
                 // Accuracy is further improved through language correction, text cleaning
                 // (cleanOCRText), confidence filtering and TextTracker stabilization.
                 request.recognitionLevel = self.recognitionLevel
-                request.recognitionLanguages = ["en"]
+                request.recognitionLanguages = self.recognitionLanguages
                 request.usesLanguageCorrection = true
                 request.automaticallyDetectsLanguage = false
 

@@ -62,6 +62,20 @@ private struct TranslationSettingsTab: View {
                     .foregroundStyle(.secondary)
             }
 
+            Section("ภาษา") {
+                Picker("ภาษาในเกม:", selection: $settings.sourceLanguage) {
+                    ForEach(AppSettings.SourceLanguage.allCases) { language in
+                        Text(language.displayName).tag(language)
+                    }
+                }
+
+                Text(settings.sourceLanguage.requiresAccurateOCR
+                     ? "แปลเป็นภาษาไทย — ภาษานี้ใช้ OCR โหมดแม่นยำเสมอ"
+                     : "แปลเป็นภาษาไทย")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("API Keys") {
                 if settings.selectedProvider == .openAI {
                     SecureField("OpenAI API Key:", text: $settings.openAIApiKey)
@@ -258,8 +272,11 @@ private struct CaptureSettingsTab: View {
                     }
                 }
                 .pickerStyle(.segmented)
+                .disabled(settings.sourceLanguage.requiresAccurateOCR)
 
-                Text(settings.ocrAccuracy.detail)
+                Text(settings.sourceLanguage.requiresAccurateOCR
+                     ? "ภาษา \(settings.sourceLanguage.displayName) ใช้โหมดแม่นยำเสมอ (Vision โหมดเร็วรองรับเฉพาะอักษรละติน)"
+                     : settings.ocrAccuracy.detail)
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -377,7 +394,7 @@ private struct OverlaySettingsTab: View {
             Section("ตัวเลือกเพิ่มเติม") {
                 Toggle("แสดงข้อความต้นฉบับด้วย", isOn: $settings.showOriginalText)
 
-                Text("แสดงข้อความอังกฤษดั้งเดิมใต้คำแปลภาษาไทย")
+                Text("แสดงข้อความต้นฉบับใต้คำแปลภาษาไทย")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
