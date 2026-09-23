@@ -136,7 +136,7 @@ during start can leave a hidden stream running on the old window.
 
 **Outcome:** PARTIAL — all `[code]`/`[build]` criteria pass; AC-4 pending owner
 **Version:** 1.11.13 → 1.11.14
-**Commit:** not committed (waiting for owner)
+**Commit:** `99117eb`
 
 ### Acceptance criteria
 | AC | Result | Evidence |
