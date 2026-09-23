@@ -4,12 +4,16 @@ Index of all tasks. The **Status line inside each task file is the source of
 truth**; whoever changes a status updates this row in the same step.
 Lifecycle and who may set each status: `WORKFLOW.md` §3.
 
-**Next ID:** T-0010
+**Next ID:** T-0014
 
 ## Active
 
 | ID | Title | Status | Priority | Depends on | Next step by |
 |---|---|---|---|---|---|
+| [T-0010](T-0010-api-key-fields-save-cleanly.md) | API key fields must save cleanly: trimmed, not on every keystroke, no session leak | READY | P2 | — | Claude Code |
+| [T-0011](T-0011-cache-per-provider-no-chatter-caching.md) | Cached translations must belong to the provider and language that made them | READY | P2 | — | Claude Code |
+| [T-0012](T-0012-pause-on-refused-api-key.md) | Stop retrying while the API key is refused, and say so | PLANNED | P2 | T-0010 | Cowork (READY after T-0010 DONE) |
+| [T-0013](T-0013-tests-do-not-write-owner-log.md) | Unit tests must not write to the owner's GameTranslator.log | READY | P3 | — | Claude Code |
 
 ## Closed
 

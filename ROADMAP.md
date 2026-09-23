@@ -26,7 +26,8 @@ From the owner — every task must keep these (details in `CLAUDE.md`):
 | M0 — Workflow | Cowork × Claude Code task system in place | done 2026-09-23 | — |
 | M1 — Stability | Close the gaps found in the 2026-09-23 audits that affect the standing goals | done 2026-09-24 | T-0001 … T-0005 |
 | M2 — Reliability & UX | Errors visible to the user, no request storms, correct placement on every display | done 2026-09-24 | T-0006 … T-0009 |
-| M3 — … | *To be defined by Cowork with the owner* | — | — |
+| M3 — Providers & settings hygiene | Keys saved cleanly, right cache per provider, no endless retries on a refused key, clean test logs | planned | T-0010 … T-0013 |
+| M4 — … | *To be defined by Cowork with the owner* | — | — |
 
 ## Backlog (not yet tasks)
 
@@ -48,17 +49,17 @@ errors never shown in the menu → T-0006 · Esc in region selector hides overla
 T-0007 · batch fallback request storm → T-0008 · multi-monitor coordinates → T-0009.
 
 ### Backlog (not yet tasks)
-- **LLM chatter fallback is cached forever** — when a model replies with chatter,
+- → T-0011 · **LLM chatter fallback is cached forever** — when a model replies with chatter,
   `LLMPrompt.sanitize` returns the source text, which is then cached as the
   "translation" and never retried until the glossary changes or the app restarts.
-- **Translation cache ignores the provider** — after switching provider, cached
+- → T-0011 · **Translation cache ignores the provider** — after switching provider, cached
   lines still show the previous provider's translation.
 - **`build.sh` may reset the Screen Recording grant** — `rm -rf` + copy and
   `codesign --deep` are still suspected (see `CLAUDE.md` gotchas). T-0004 only makes
   signing failures visible. Related to stability goal 1. From T-0004: sign and
   verify the build output *before* replacing the installed app, so a failed
   signature never leaves a broken copy in /Applications.
-- **API key field** — every keystroke writes the Keychain, creates a new provider and
+- → T-0010 · **API key field** — every keystroke writes the Keychain, creates a new provider and
   a new `URLSession` that is never invalidated (leak) and sends a warm-up request;
   keys are not trimmed (pasted whitespace → 401).
 - **Game window resize / FPS change while running** — stream size is fixed at start
@@ -71,11 +72,11 @@ T-0007 · batch fallback request storm → T-0008 · multi-monitor coordinates �
   in URL query; `CIContext` per frame; `TranslationCache` LRU O(n); TextTracker /
   layout on the main actor every frame; `GameLog` not thread-safe and logs all game
   text to the Desktop; several window pickers can be open at once.
-- **Unit tests write the owner's log** — the test host is the app, so `GameLog`
+- → T-0013 · **Unit tests write the owner's log** — the test host is the app, so `GameLog`
   lines from tests land in `~/Desktop/GameTranslator.log` (seen 2026-09-23 23:49).
 - From T-0008: typed HTTP status in `TranslationError` instead of "HTTP 401: …" text.
 - From T-0009: overlay text `contentsScale` uses `NSScreen.main` — may blur on a
   Retina + non-Retina pair.
-- **Auth errors retried forever** — with an invalid key the pipeline retries every
+- → T-0012 · **Auth errors retried forever** — with an invalid key the pipeline retries every
   ~3 s for as long as text is on screen (seen 2026-09-24, HTTP 401). Pause
   translation (or back off much longer) after 401/403 until the key changes.
