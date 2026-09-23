@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **Status** | REVIEW |
+| **Status** | DONE |
 | **Type** | fix |
 | **Priority** | P1 |
 | **Version impact** | none (build script only) |
@@ -179,9 +179,16 @@ before; Screen Recording is **not** asked again.
 - Minor, no action: with `set -o pipefail`, `echo … \| grep -q` could in theory report SIGPIPE; output is tiny, so not a real risk.
 - Follow-up accepted → ROADMAP backlog: sign/verify the build output **before** replacing the installed app (merges with the `rm -rf`/`--deep` item).
 
+- Owner 2026-09-24: AC-5 ✅ — v1.11.19 installed by build.sh and log shows "Screen Recording permission granted ✓" (no new prompt). AC-4 still pending.
+
+- Owner 2026-09-24: AC-4 done (wrong SIGN_IDENTITY stops with Thai error, running app not killed).
+
+**Decision: DONE.**
+
 ## Status history
 | Date | Change | Who | Note |
 |---|---|---|---|
 | 2026-09-23 | → READY | Cowork | created from code audit v1.11.11 |
 | 2026-09-23 | READY → IN_PROGRESS | Claude Code | started |
 | 2026-09-23 | IN_PROGRESS → REVIEW | Claude Code | code/build ACs pass; AC-4, AC-5 manual pending owner |
+| 2026-09-24 | REVIEW → DONE | Cowork | manual checks confirmed by owner |

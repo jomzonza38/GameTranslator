@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **Status** | REVIEW |
+| **Status** | DONE |
 | **Type** | fix |
 | **Priority** | P1 |
 | **Version impact** | patch |
@@ -203,6 +203,10 @@ Install with `./build.sh` first.
 - Minor, no action: if the service ever cancels a start the coordinator still considers current, the user would see "เริ่มจับภาพไม่ได้" with a cancellation text. Not reachable today (`start` is guarded by `isRunning`).
 - Version 1.11.13 → 1.11.14 ✅. Not committed yet.
 
+- Owner 2026-09-24: AC-4 done. Log 00:07:00–00:07:44 shows 6 start/stop cycles in ~45 s, no crash, each start `✓ Capture started successfully`.
+
+**Decision: DONE.**
+
 ## Status history
 | Date | Change | Who | Note |
 |---|---|---|---|
@@ -210,3 +214,4 @@ Install with `./build.sh` first.
 | 2026-09-23 | PLANNED → READY | Cowork | T-0001 DONE |
 | 2026-09-23 | READY → IN_PROGRESS | Claude Code | started |
 | 2026-09-23 | IN_PROGRESS → REVIEW | Claude Code | code/build ACs pass; AC-4 manual pending owner |
+| 2026-09-24 | REVIEW → DONE | Cowork | manual checks confirmed by owner |

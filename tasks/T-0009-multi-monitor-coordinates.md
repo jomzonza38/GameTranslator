@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **Status** | REVIEW |
+| **Status** | DONE |
 | **Type** | fix |
 | **Priority** | P3 |
 | **Version impact** | patch |
@@ -169,9 +169,14 @@ Expected: everything is placed exactly as before.
 
 - Follow-up (text `contentsScale` from the overlay's own screen) → ROADMAP backlog, minor.
 
+- Owner 2026-09-24: single display unchanged (AC-4). AC-3 (two displays) waived — not tested, logic covered by ScreenCoordinatesTests.
+
+**Decision: DONE.**
+
 ## Status history
 | Date | Change | Who | Note |
 |---|---|---|---|
 | 2026-09-23 | → READY | Cowork | created from code audit v1.11.11 |
 | 2026-09-23 | READY → IN_PROGRESS | Claude Code | started |
 | 2026-09-23 | IN_PROGRESS → REVIEW | Claude Code | test/code/build ACs pass; AC-3, AC-4 manual pending owner |
+| 2026-09-24 | REVIEW → DONE | Cowork | single display unchanged (AC-4). AC-3 (two displays) waived — not tested, logic  |

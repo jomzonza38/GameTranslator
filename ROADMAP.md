@@ -9,7 +9,7 @@ macOS menu bar app that reads text from a game window (ScreenCaptureKit + Vision
 OCR), translates it to Thai (Google, DeepL, OpenAI, Claude) and shows it as an
 overlay or floating panel. Users: Thai players of English / Japanese / Chinese /
 Korean games. Current version: see `CFBundleShortVersionString` in
-`Resources/Info.plist` (1.11.11 on 2026-09-23).
+`Resources/Info.plist` (1.11.19 on 2026-09-24).
 
 ## Standing quality goals (always in force)
 
@@ -24,8 +24,8 @@ From the owner — every task must keep these (details in `CLAUDE.md`):
 | Milestone | Goal | Status | Tasks |
 |---|---|---|---|
 | M0 — Workflow | Cowork × Claude Code task system in place | done 2026-09-23 | — |
-| M1 — Stability | Close the gaps found in the 2026-09-23 audits that affect the standing goals | in progress | T-0001 … T-0005 |
-| M2 — Reliability & UX | Errors visible to the user, no request storms, correct placement on every display | planned | T-0006 … T-0009 |
+| M1 — Stability | Close the gaps found in the 2026-09-23 audits that affect the standing goals | done 2026-09-24 | T-0001 … T-0005 |
+| M2 — Reliability & UX | Errors visible to the user, no request storms, correct placement on every display | done 2026-09-24 | T-0006 … T-0009 |
 | M3 — … | *To be defined by Cowork with the owner* | — | — |
 
 ## Backlog (not yet tasks)
@@ -76,3 +76,6 @@ T-0007 · batch fallback request storm → T-0008 · multi-monitor coordinates �
 - From T-0008: typed HTTP status in `TranslationError` instead of "HTTP 401: …" text.
 - From T-0009: overlay text `contentsScale` uses `NSScreen.main` — may blur on a
   Retina + non-Retina pair.
+- **Auth errors retried forever** — with an invalid key the pipeline retries every
+  ~3 s for as long as text is on screen (seen 2026-09-24, HTTP 401). Pause
+  translation (or back off much longer) after 401/403 until the key changes.

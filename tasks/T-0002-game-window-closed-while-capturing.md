@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **Status** | REVIEW |
+| **Status** | DONE |
 | **Type** | fix |
 | **Priority** | P1 |
 | **Version impact** | patch |
@@ -225,9 +225,14 @@ normally → no "หน้าต่างเกมถูกปิด" message ap
 - **Extra manual check requested (risk, not a defect yet):** the watchdog tracks one window ID. Some games destroy and recreate their window when switching fullscreen ↔ windowed; that would now stop translation with "หน้าต่างเกมถูกปิด". Owner: toggle fullscreen in a game while translating and note the result. If it stops, Cowork will open a follow-up task (e.g. re-attach to the same app's new window) — it does not fail this task.
 - Follow-ups noted: minimised game (out of scope), on-screen toast (UX, later). Not turned into tasks yet.
 
+- Owner 2026-09-24: quitting the app while translating works (AC-4/AC-5). Fullscreen-toggle risk not tested — reopen as a new task if seen.
+
+**Decision: DONE.**
+
 ## Status history
 | Date | Change | Who | Note |
 |---|---|---|---|
 | 2026-09-23 | → READY | Cowork | created from code audit v1.11.11 |
 | 2026-09-23 | READY → IN_PROGRESS | Claude Code | started |
 | 2026-09-23 | IN_PROGRESS → REVIEW | Claude Code | code/build ACs pass; AC-4, AC-5 manual pending owner |
+| 2026-09-24 | REVIEW → DONE | Cowork | quitting the app while translating works (AC-4/AC-5). Fullscreen-toggle risk not |

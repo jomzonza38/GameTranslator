@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **Status** | REVIEW |
+| **Status** | DONE |
 | **Type** | fix |
 | **Priority** | P2 |
 | **Version impact** | patch |
@@ -142,9 +142,14 @@ Expected: translations appear as before in both modes (same text, positions), no
 | AC-3 | ⏳ owner | |
 | AC-4 | ✅ | 63 tests reported. |
 
+- Owner 2026-09-24: normal use on v1.11.19, no crash; log shows OCR running. AC-3 accepted.
+
+**Decision: DONE.**
+
 ## Status history
 | Date | Change | Who | Note |
 |---|---|---|---|
 | 2026-09-23 | → READY | Cowork | created from code audit v1.11.11 |
 | 2026-09-23 | READY → IN_PROGRESS | Claude Code | started |
 | 2026-09-23 | IN_PROGRESS → REVIEW | Claude Code | code/test/build ACs pass; AC-3 manual pending owner |
+| 2026-09-24 | REVIEW → DONE | Cowork | normal use on v1.11.19, no crash; log shows OCR running. AC-3 accepted. |

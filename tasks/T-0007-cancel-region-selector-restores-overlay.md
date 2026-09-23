@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **Status** | REVIEW |
+| **Status** | DONE |
 | **Type** | fix |
 | **Priority** | P2 |
 | **Version impact** | patch |
@@ -143,9 +143,14 @@ Expected: no overlay appears.
 | AC-2, AC-3 | ⏳ owner | |
 | AC-4 | ✅ | |
 
+- Owner 2026-09-24: AC-2/AC-3 done (Esc brings overlay back; Panel unaffected). Regions 5 and 6 were added during the test.
+
+**Decision: DONE.**
+
 ## Status history
 | Date | Change | Who | Note |
 |---|---|---|---|
 | 2026-09-23 | → READY | Cowork | created from code audit v1.11.11 |
 | 2026-09-23 | READY → IN_PROGRESS | Claude Code | started |
 | 2026-09-23 | IN_PROGRESS → REVIEW | Claude Code | code/build ACs pass; AC-2, AC-3 manual pending owner |
+| 2026-09-24 | REVIEW → DONE | Cowork | manual checks confirmed by owner |

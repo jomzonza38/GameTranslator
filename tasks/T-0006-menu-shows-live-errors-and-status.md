@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **Status** | REVIEW |
+| **Status** | DONE |
 | **Type** | fix |
 | **Priority** | P2 |
 | **Version impact** | patch |
@@ -148,9 +148,14 @@ Also check: with DeepL Free selected, `📊 เหลือ: …` goes down afte
 | AC-3 | ⏳ owner | |
 | AC-4 | ✅ | |
 
+- Owner 2026-09-24: AC-3 done. Log 00:10:03–00:10:23 shows HTTP 401 (invalid Claude key) retried every ~3.4 s; owner saw the ⚠️ line in the menu.
+
+**Decision: DONE.**
+
 ## Status history
 | Date | Change | Who | Note |
 |---|---|---|---|
 | 2026-09-23 | → READY | Cowork | created from code audit v1.11.11 |
 | 2026-09-23 | READY → IN_PROGRESS | Claude Code | started |
 | 2026-09-23 | IN_PROGRESS → REVIEW | Claude Code | code/build ACs pass; AC-3 manual pending owner |
+| 2026-09-24 | REVIEW → DONE | Cowork | manual checks confirmed by owner |
