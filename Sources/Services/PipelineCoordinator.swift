@@ -115,11 +115,19 @@ final class PipelineCoordinator: ObservableObject {
         GameLog.log("Provider: \(translationService.currentProviderName), FPS: \(settings.captureFrameRate)")
         GameLog.log("Capture regions: \(settings.captureRegions.count) defined")
 
-        // Start screen capture
-        try await screenCapture.startCapture(
-            window: scWindow,
-            frameRate: settings.captureFrameRate
-        )
+        // Start screen capture. If it fails (e.g. the game window closed after it
+        // was picked), undo everything above so the app is idle again.
+        do {
+            try await screenCapture.startCapture(
+                window: scWindow,
+                frameRate: settings.captureFrameRate
+            )
+        } catch {
+            GameLog.log("✗ Capture failed to start: \(error.localizedDescription)")
+            await tearDown()
+            lastError = error.localizedDescription
+            throw error
+        }
 
         GameLog.log("✓ Capture started successfully")
         status = .running
@@ -127,6 +135,11 @@ final class PipelineCoordinator: ObservableObject {
 
     func stop() async {
         guard isRunning else { return }
+        await tearDown()
+    }
+
+    /// Return to the idle state: used by stop() and when start() fails part-way
+    private func tearDown() async {
         isRunning = false
 
         // Drop queued frames and stop the in-flight pipeline, so nothing is

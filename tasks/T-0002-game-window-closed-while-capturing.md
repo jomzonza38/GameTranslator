@@ -30,6 +30,16 @@ thinks it is running. This is stability goal 2.
   window closes. Frames simply stopping (window minimised / hidden) is a different
   case and is out of scope.
 - Related: T-0001 (failed *start*), T-0003 (stop during start).
+- > Amended 2026-09-23 (Cowork, from T-0001 manual test): picking a window whose app
+  had just been quit **started capture successfully** twice (log: `Starting capture of
+  window: เปิด` → `✓ Capture started successfully` → one `OCR … 0 texts` → nothing
+  more). So a closed window does not reliably make `startCapture` throw, and it is
+  not proven that `didStopWithError` fires either. Requirement 1 therefore also
+  covers "capture started on a window that no longer exists" and "stream silently
+  delivers no frames because the window is gone". Hint: check whether the window
+  still exists (e.g. via its window ID) rather than relying only on the delegate.
+  AC-4 should be checked both ways: quit the game while translating, and pick a
+  window whose app was already quit.
 
 ## Requirements
 1. When the capture stream stops on its own while running, the app ends in the same

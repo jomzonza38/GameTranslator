@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **Status** | PLANNED |
+| **Status** | READY |
 | **Type** | fix |
 | **Priority** | P1 |
 | **Version impact** | patch |
@@ -28,6 +28,11 @@ during start can leave a hidden stream running on the old window.
 - The next `startCapture(window:)` hits `guard !isCapturing else { return }` and
   returns at once — frames keep coming from the **old** window.
 - `start` also sets `status = .running` after the await even if stopped meanwhile.
+- > Amended 2026-09-23 (Cowork, from T-0001 review): after T-0001, `start` calls a
+  shared `tearDown()` when `startCapture` fails. Requirement 3 includes this ordering:
+  stop → new start → the *old* start then fails; the old failure must not tear down
+  the new session. `ScreenCaptureService` also keeps stale `selectedWindow`/`streamOutput`
+  after a failed start.
 - Depends on T-0001 because both change the start path; do T-0001 first to avoid
   conflicting edits.
 
@@ -91,3 +96,4 @@ during start can leave a hidden stream running on the old window.
 | Date | Change | Who | Note |
 |---|---|---|---|
 | 2026-09-23 | → PLANNED | Cowork | created from code audit; READY once T-0001 is DONE |
+| 2026-09-23 | PLANNED → READY | Cowork | T-0001 DONE |
