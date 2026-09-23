@@ -89,7 +89,7 @@ the user stops and restarts.
 
 **Outcome:** PARTIAL — all `[code]`/`[build]` criteria pass; AC-2 and AC-3 pending owner
 **Version:** 1.11.16 → 1.11.17
-**Commit:** not committed (waiting for owner)
+**Commit:** `a6be575`
 
 ### Acceptance criteria
 | AC | Result | Evidence |
