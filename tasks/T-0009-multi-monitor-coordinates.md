@@ -107,7 +107,7 @@ and whichever screen has focus.
 
 **Outcome:** PARTIAL — all `[test]`/`[code]`/`[build]` criteria pass; AC-3 and AC-4 pending owner
 **Version:** 1.11.18 → 1.11.19
-**Commit:** not committed (waiting for owner)
+**Commit:** `7574368`
 
 ### Acceptance criteria
 | AC | Result | Evidence |
