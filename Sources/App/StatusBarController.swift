@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 import ScreenCaptureKit
 import CoreGraphics
+import Carbon.HIToolbox
 
 /// Controls the menu bar status item and its menu
 @MainActor
@@ -38,6 +39,27 @@ final class StatusBarController: NSObject, ObservableObject {
         }
 
         rebuildMenu()
+        registerHotKeys()
+    }
+
+    // MARK: - Global Hotkeys (⌃⌥ + key, so they don't clash with games or browsers)
+
+    private func registerHotKeys() {
+        let modifiers = controlKey | optionKey
+        let hotKeys = HotKeyManager.shared
+
+        hotKeys.register(keyCode: kVK_ANSI_T, modifiers: modifiers) { [weak self] in
+            Task { @MainActor in self?.toggleTranslation() }
+        }
+        hotKeys.register(keyCode: kVK_ANSI_H, modifiers: modifiers) { [weak self] in
+            Task { @MainActor in self?.toggleHideTranslations() }
+        }
+        hotKeys.register(keyCode: kVK_ANSI_P, modifiers: modifiers) { [weak self] in
+            Task { @MainActor in self?.togglePause() }
+        }
+        hotKeys.register(keyCode: kVK_ANSI_Y, modifiers: modifiers) { [weak self] in
+            Task { @MainActor in self?.translateOnce() }
+        }
     }
 
     func rebuildMenu() {
@@ -94,9 +116,32 @@ final class StatusBarController: NSObject, ObservableObject {
         // Start/Stop
         if pipeline.isRunning {
             let stopItem = NSMenuItem(title: "⏹ หยุดแปล", action: #selector(stopTranslation), keyEquivalent: "t")
-            stopItem.keyEquivalentModifierMask = [.command, .shift]
+            stopItem.keyEquivalentModifierMask = [.control, .option]
             stopItem.target = self
             menu.addItem(stopItem)
+
+            let pauseItem = NSMenuItem(
+                title: pipeline.isPaused ? "▶️ แปลต่อ" : "⏸ พักการแปล",
+                action: #selector(togglePause),
+                keyEquivalent: "p"
+            )
+            pauseItem.keyEquivalentModifierMask = [.control, .option]
+            pauseItem.target = self
+            menu.addItem(pauseItem)
+
+            let onceItem = NSMenuItem(title: "📸 แปลหน้าจอนี้ครั้งเดียว", action: #selector(translateOnce), keyEquivalent: "y")
+            onceItem.keyEquivalentModifierMask = [.control, .option]
+            onceItem.target = self
+            menu.addItem(onceItem)
+
+            let hideItem = NSMenuItem(
+                title: pipeline.isDisplayHidden ? "👁 แสดงคำแปล" : "🙈 ซ่อนคำแปล",
+                action: #selector(toggleHideTranslations),
+                keyEquivalent: "h"
+            )
+            hideItem.keyEquivalentModifierMask = [.control, .option]
+            hideItem.target = self
+            menu.addItem(hideItem)
 
             menu.addItem(NSMenuItem.separator())
 
@@ -203,7 +248,7 @@ final class StatusBarController: NSObject, ObservableObject {
             menu.addItem(fullScreenItem)
         } else {
             let selectItem = NSMenuItem(title: "🎮 เลือก Window...", action: #selector(showWindowPicker), keyEquivalent: "t")
-            selectItem.keyEquivalentModifierMask = [.command, .shift]
+            selectItem.keyEquivalentModifierMask = [.control, .option]
             selectItem.target = self
             menu.addItem(selectItem)
         }
@@ -293,6 +338,32 @@ final class StatusBarController: NSObject, ObservableObject {
                 showAlert(title: "เริ่มจับภาพไม่ได้", message: error.localizedDescription)
             }
         }
+    }
+
+    /// ⌃⌥T — start (window picker) or stop
+    private func toggleTranslation() {
+        if pipeline.isRunning {
+            stopTranslation()
+        } else {
+            showWindowPicker()
+        }
+    }
+
+    @objc private func togglePause() {
+        pipeline.togglePause()
+        updateStatusIcon(running: pipeline.isRunning)
+        rebuildMenu()
+    }
+
+    @objc private func translateOnce() {
+        pipeline.translateOnce()
+        updateStatusIcon(running: pipeline.isRunning)
+        rebuildMenu()
+    }
+
+    @objc private func toggleHideTranslations() {
+        pipeline.toggleDisplayHidden()
+        rebuildMenu()
     }
 
     @objc private func stopTranslation() {
@@ -413,7 +484,12 @@ final class StatusBarController: NSObject, ObservableObject {
 
     private func updateStatusIcon(running: Bool) {
         if let button = statusItem?.button {
-            let symbolName = running ? "character.bubble.fill" : "character.bubble"
+            let symbolName: String
+            if running && pipeline.isPaused {
+                symbolName = "pause.circle"
+            } else {
+                symbolName = running ? "character.bubble.fill" : "character.bubble"
+            }
             button.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: "Game Translator")
             button.image?.size = NSSize(width: 18, height: 18)
         }

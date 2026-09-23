@@ -13,6 +13,10 @@ final class PipelineCoordinator: ObservableObject {
     @Published var currentRegions: [TranslatedRegion] = []
     @Published var lastError: String?
     @Published var stats = PipelineStats()
+    /// Continuous translation paused (frames are ignored unless a single shot is requested)
+    @Published private(set) var isPaused = false
+    /// Translations hidden from screen (pipeline keeps running)
+    @Published private(set) var isDisplayHidden = false
 
     // MARK: - Services
 
@@ -52,6 +56,7 @@ final class PipelineCoordinator: ObservableObject {
     private var selectedWindow: Any? // SCWindow
     private var pendingFrame: (image: CGImage, contentRect: CGRect)?
     private var isProcessing = false
+    private var singleShotRequested = false
     private let settings = AppSettings.shared
 
     /// Callback when capture regions change (add/remove/clear)
@@ -100,6 +105,9 @@ final class PipelineCoordinator: ObservableObject {
         pendingGlossary = nil
 
         selectedWindow = window
+        isPaused = false
+        isDisplayHidden = false
+        singleShotRequested = false
         isRunning = true
         status = .capturing
         lastError = nil
@@ -140,9 +148,48 @@ final class PipelineCoordinator: ObservableObject {
         panelController.hide()
 
         isRunning = false
+        isPaused = false
+        isDisplayHidden = false
+        singleShotRequested = false
         status = .idle
         currentRegions = []
         selectedWindow = nil
+    }
+
+    // MARK: - Pause / Single Shot / Visibility
+
+    /// Pause or resume continuous translation
+    func togglePause() {
+        guard isRunning else { return }
+        isPaused.toggle()
+        singleShotRequested = false
+        GameLog.log(isPaused ? "Paused" : "Resumed")
+    }
+
+    /// Pause continuous translation and translate only the next captured frame
+    func translateOnce() {
+        guard isRunning else { return }
+        isPaused = true
+        singleShotRequested = true
+        if isDisplayHidden {
+            toggleDisplayHidden()
+        }
+        GameLog.log("Single-shot translation requested")
+    }
+
+    /// Hide or show translations on screen without stopping capture
+    func toggleDisplayHidden() {
+        guard isRunning else { return }
+        isDisplayHidden.toggle()
+        if settings.displayMode == .overlay {
+            if isDisplayHidden {
+                overlayController.hideTemporarily()
+            } else if let window = selectedWindow as? SCWindow {
+                overlayController.show(over: screenCapture.currentWindowFrame ?? window.frame)
+            }
+        } else {
+            panelController.setHidden(isDisplayHidden)
+        }
     }
 
     func updateProvider() {
@@ -152,6 +199,7 @@ final class PipelineCoordinator: ObservableObject {
     /// Switch between overlay and panel display modes while running
     func switchDisplayMode() {
         guard isRunning, let window = selectedWindow as? SCWindow else { return }
+        isDisplayHidden = false
 
         if settings.displayMode == .overlay {
             // Switching to overlay mode
@@ -187,8 +235,8 @@ final class PipelineCoordinator: ObservableObject {
 
                 GameLog.log("Region added: \(name) (\(color.rawValue)) x=\(String(format: "%.2f", normalizedRect.origin.x)) y=\(String(format: "%.2f", normalizedRect.origin.y)) w=\(String(format: "%.2f", normalizedRect.width)) h=\(String(format: "%.2f", normalizedRect.height))")
 
-                // Re-show overlay if in overlay mode
-                if self.settings.displayMode == .overlay, self.isRunning {
+                // Re-show overlay if in overlay mode (unless the user hid translations)
+                if self.settings.displayMode == .overlay, self.isRunning, !self.isDisplayHidden {
                     self.overlayController.show(over: windowFrame)
                 }
 
@@ -228,6 +276,11 @@ final class PipelineCoordinator: ObservableObject {
     // MARK: - Pipeline Processing
 
     private func processFrame(_ image: CGImage, contentRect: CGRect) {
+        if isPaused {
+            guard singleShotRequested else { return }
+            singleShotRequested = false
+        }
+
         guard !isProcessing else {
             pendingFrame = (image, contentRect)
             return

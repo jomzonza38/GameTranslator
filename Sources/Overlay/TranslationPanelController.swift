@@ -250,6 +250,16 @@ final class TranslationPanelController: NSObject, NSWindowDelegate {
         panelData.clear()
     }
 
+    /// Hide or re-show the panel without clearing its content
+    func setHidden(_ hidden: Bool) {
+        guard let panel = panelWindow else { return }
+        if hidden {
+            panel.orderOut(nil)
+        } else {
+            panel.orderFrontRegardless()
+        }
+    }
+
     // MARK: - Update
 
     func updateRegions(_ regions: [TranslatedRegion]) {
