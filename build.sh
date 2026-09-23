@@ -79,12 +79,53 @@ rm -rf "$APP_PATH"
 touch build/.metadata_never_index 2>/dev/null || true
 echo "🧹 ลบ build output .app (ป้องกันแอพซ้ำใน Spotlight)"
 
-# --- Ad-hoc sign with entitlements ---
+# --- Sign with entitlements ---
+# A failed or wrong signature must stop here, before the running app is killed or
+# the new one launched: an app not signed with the certificate gets a new identity
+# and macOS asks for Screen Recording permission again.
+sign_failed() {
+    echo ""
+    echo "❌ Sign ไม่สำเร็จ ($SIGN_IDENTITY) — หยุด build (ไม่ปิดแอพเดิม ไม่เปิดแอพใหม่)"
+    echo "$1" | sed 's/^/   /'
+    echo ""
+    echo "   ⚠️  $TARGET ที่ลงไปแล้วยังไม่ได้ sign ด้วย certificate ที่ถูกต้อง"
+    echo "      อย่าเปิดตัวนี้ (macOS จะถามสิทธิ์ Screen Recording ใหม่) — แก้แล้วรัน ./build.sh อีกครั้ง"
+    echo "   ดู certificate ที่มี: security find-identity -v -p codesigning"
+    exit 1
+}
+
 ENT="Resources/GameTranslator.entitlements"
+SIGN_ARGS=(--force --deep --sign "$SIGN_IDENTITY")
 if [ -f "$ENT" ]; then
-    codesign --force --deep --sign "$SIGN_IDENTITY" --entitlements "$ENT" --timestamp=none "$TARGET" 2>&1 || true
-else
-    codesign --force --deep --sign "$SIGN_IDENTITY" --timestamp=none "$TARGET" 2>&1 || true
+    SIGN_ARGS+=(--entitlements "$ENT")
+fi
+SIGN_ARGS+=(--timestamp=none)
+
+if ! SIGN_OUTPUT=$(codesign "${SIGN_ARGS[@]}" "$TARGET" 2>&1); then
+    sign_failed "$SIGN_OUTPUT"
+fi
+if [ -n "$SIGN_OUTPUT" ]; then
+    echo "$SIGN_OUTPUT"
+fi
+
+# --- Verify the signature (certificate builds only; ad-hoc is the known fallback) ---
+if [ "$SIGN_IDENTITY" != "-" ]; then
+    if ! VERIFY_OUTPUT=$(codesign --verify --deep --strict "$TARGET" 2>&1); then
+        sign_failed "codesign --verify: $VERIFY_OUTPUT"
+    fi
+    if ! SIGN_INFO=$(codesign -dvv "$TARGET" 2>&1); then
+        sign_failed "codesign -dvv: $SIGN_INFO"
+    fi
+    if echo "$SIGN_INFO" | grep -q "^Signature=adhoc"; then
+        sign_failed "แอพยังเป็น ad-hoc signature ไม่ใช่ $SIGN_IDENTITY"
+    fi
+    # An identity given as a SHA-1 hash can't be matched by name — the ad-hoc check covers it
+    if ! [[ "$SIGN_IDENTITY" =~ ^[0-9A-Fa-f]{40}$ ]] \
+        && ! echo "$SIGN_INFO" | grep -qxF "Authority=$SIGN_IDENTITY"; then
+        sign_failed "ผู้ sign ไม่ตรงกับ $SIGN_IDENTITY:
+$(echo "$SIGN_INFO" | grep '^Authority=' || echo '(ไม่มี Authority)')"
+    fi
+    echo "✅ ตรวจ signature แล้ว — sign ด้วย $SIGN_IDENTITY"
 fi
 echo "🔏 Signed ($SIGN_IDENTITY)"
 
