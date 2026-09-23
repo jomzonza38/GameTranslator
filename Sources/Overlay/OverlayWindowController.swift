@@ -92,14 +92,6 @@ final class OverlayWindowController {
     /// Convert from CGWindow coordinate system (origin at top-left of primary display)
     /// to NSScreen coordinate system (origin at bottom-left of primary display)
     private func convertToScreenCoordinates(_ cgRect: CGRect) -> CGRect {
-        guard let mainScreen = NSScreen.main else { return cgRect }
-        let screenHeight = mainScreen.frame.height
-
-        return CGRect(
-            x: cgRect.origin.x,
-            y: screenHeight - cgRect.origin.y - cgRect.height,
-            width: cgRect.width,
-            height: cgRect.height
-        )
+        ScreenCoordinates.appKitRect(fromCG: cgRect)
     }
 }

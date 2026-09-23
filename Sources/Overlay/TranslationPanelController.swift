@@ -444,14 +444,14 @@ final class TranslationPanelController: NSObject, NSWindowDelegate {
 
     /// Position the panel to the right of the game window (or left if no room)
     private func positionPanel(near gameFrame: CGRect) {
+        // Convert game frame from CG (top-left origin) to NS (bottom-left origin) and
+        // place the panel on the display the game is on
+        let gameNSFrame = ScreenCoordinates.appKitRect(fromCG: gameFrame)
         guard let panel = panelWindow,
-              let screen = NSScreen.main else { return }
+              let screen = ScreenCoordinates.screen(showingMostOf: gameNSFrame) else { return }
 
         let screenFrame = screen.visibleFrame
-        let screenHeight = screen.frame.height
-
-        // Convert game frame from CG (top-left origin) to NS (bottom-left origin)
-        let gameNSY = screenHeight - gameFrame.origin.y - gameFrame.height
+        let gameNSY = gameNSFrame.origin.y
 
         // Try right side first
         let rightX = gameFrame.maxX + 12

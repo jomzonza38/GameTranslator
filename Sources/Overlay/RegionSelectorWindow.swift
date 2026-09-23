@@ -22,15 +22,8 @@ final class RegionSelectorWindow {
         onCancel: (() -> Void)? = nil,
         completion: @escaping RegionSelectionHandler
     ) {
-        // Convert CG (top-left) to NS (bottom-left)
-        guard let mainScreen = NSScreen.main else { return }
-        let screenHeight = mainScreen.frame.height
-        let nsFrame = CGRect(
-            x: gameFrame.origin.x,
-            y: screenHeight - gameFrame.origin.y - gameFrame.height,
-            width: gameFrame.width,
-            height: gameFrame.height
-        )
+        // Convert CG (top-left) to NS (bottom-left), relative to the primary display
+        let nsFrame = ScreenCoordinates.appKitRect(fromCG: gameFrame)
 
         let win = NSWindow(
             contentRect: nsFrame,
