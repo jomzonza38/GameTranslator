@@ -28,9 +28,6 @@ A macOS menu bar app that captures text from a game window, recognizes it with O
 | Keys | Action |
 |---|---|
 | ⌃⌥T | Pick a window and start / stop |
-| ⌃⌥P | Pause / resume continuous translation |
-| ⌃⌥Y | Translate the current screen once |
-| ⌃⌥H | Hide / show translations |
 | ⌃⌥1…9 | Show / hide region 1…9 |
 | ⌘⇧R | Add a translation region (menu) |
 | ⌘⇧L | Translation history (menu) |

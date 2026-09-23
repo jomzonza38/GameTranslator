@@ -14,10 +14,6 @@ final class PipelineCoordinator: ObservableObject {
     @Published var currentRegions: [TranslatedRegion] = []
     @Published var lastError: String?
     @Published var stats = PipelineStats()
-    /// Continuous translation paused (frames are ignored unless a single shot is requested)
-    @Published private(set) var isPaused = false
-    /// Translations hidden from screen (pipeline keeps running)
-    @Published private(set) var isDisplayHidden = false
 
     // MARK: - Services
 
@@ -41,9 +37,6 @@ final class PipelineCoordinator: ObservableObject {
     private var selectedWindow: Any? // SCWindow
     private var pendingFrame: (image: CGImage, contentRect: CGRect)?
     private var isProcessing = false
-    private var singleShotRequested = false
-    /// Next pipeline run translates immediately without waiting for text to settle (single shot)
-    private var skipStabilityCheck = false
     private let settings = AppSettings.shared
 
     /// Callback when capture regions change (add/remove/clear)
@@ -98,9 +91,6 @@ final class PipelineCoordinator: ObservableObject {
         contextBuilder.reset(glossary: settings.currentProfile.glossary)
 
         selectedWindow = window
-        isPaused = false
-        isDisplayHidden = false
-        singleShotRequested = false
         isRunning = true
         status = .capturing
         lastError = nil
@@ -141,48 +131,9 @@ final class PipelineCoordinator: ObservableObject {
         panelController.hide()
 
         isRunning = false
-        isPaused = false
-        isDisplayHidden = false
-        singleShotRequested = false
         status = .idle
         currentRegions = []
         selectedWindow = nil
-    }
-
-    // MARK: - Pause / Single Shot / Visibility
-
-    /// Pause or resume continuous translation
-    func togglePause() {
-        guard isRunning else { return }
-        isPaused.toggle()
-        singleShotRequested = false
-        GameLog.log(isPaused ? "Paused" : "Resumed")
-    }
-
-    /// Pause continuous translation and translate only the next captured frame
-    func translateOnce() {
-        guard isRunning else { return }
-        isPaused = true
-        singleShotRequested = true
-        if isDisplayHidden {
-            toggleDisplayHidden()
-        }
-        GameLog.log("Single-shot translation requested")
-    }
-
-    /// Hide or show translations on screen without stopping capture
-    func toggleDisplayHidden() {
-        guard isRunning else { return }
-        isDisplayHidden.toggle()
-        if settings.displayMode == .overlay {
-            if isDisplayHidden {
-                overlayController.hideTemporarily()
-            } else if let window = selectedWindow as? SCWindow {
-                overlayController.show(over: screenCapture.currentWindowFrame ?? window.frame)
-            }
-        } else {
-            panelController.setHidden(isDisplayHidden)
-        }
     }
 
     func updateProvider() {
@@ -192,7 +143,6 @@ final class PipelineCoordinator: ObservableObject {
     /// Switch between overlay and panel display modes while running
     func switchDisplayMode() {
         guard isRunning, let window = selectedWindow as? SCWindow else { return }
-        isDisplayHidden = false
 
         if settings.displayMode == .overlay {
             // Switching to overlay mode
@@ -228,8 +178,8 @@ final class PipelineCoordinator: ObservableObject {
 
                 GameLog.log("Region added: \(name) (\(color.rawValue)) x=\(String(format: "%.2f", normalizedRect.origin.x)) y=\(String(format: "%.2f", normalizedRect.origin.y)) w=\(String(format: "%.2f", normalizedRect.width)) h=\(String(format: "%.2f", normalizedRect.height))")
 
-                // Re-show overlay if in overlay mode (unless the user hid translations)
-                if self.settings.displayMode == .overlay, self.isRunning, !self.isDisplayHidden {
+                // Re-show overlay if in overlay mode
+                if self.settings.displayMode == .overlay, self.isRunning {
                     self.overlayController.show(over: windowFrame)
                 }
 
@@ -297,12 +247,6 @@ final class PipelineCoordinator: ObservableObject {
     // MARK: - Pipeline Processing
 
     private func processFrame(_ image: CGImage, contentRect: CGRect) {
-        if isPaused {
-            guard singleShotRequested else { return }
-            singleShotRequested = false
-            skipStabilityCheck = true
-        }
-
         guard !isProcessing else {
             pendingFrame = (image, contentRect)
             return
@@ -343,8 +287,6 @@ final class PipelineCoordinator: ObservableObject {
 
     private func runPipeline(image: CGImage, contentRect: CGRect) async {
         let pipelineStart = CFAbsoluteTimeGetCurrent()
-        let translateImmediately = skipStabilityCheck
-        skipStabilityCheck = false
 
         await applyGlossaryChangesIfNeeded()
 
@@ -371,8 +313,7 @@ final class PipelineCoordinator: ObservableObject {
                 works.append(prepareRegion(
                     ocrFrame: ocrFrame, filterRegion: nil, regionColor: nil, regionName: nil,
                     regionID: nil, state: globalState,
-                    ocrTime: CFAbsoluteTimeGetCurrent() - ocrStart,
-                    translateImmediately: translateImmediately
+                    ocrTime: CFAbsoluteTimeGetCurrent() - ocrStart
                 ))
             } else {
                 // OCR only the pixels inside each enabled region, so nothing outside
@@ -398,8 +339,7 @@ final class PipelineCoordinator: ObservableObject {
                         ocrFrame: ocrFrame, filterRegion: captureRegion.rect,
                         regionColor: captureRegion.color, regionName: captureRegion.name,
                         regionID: captureRegion.id, state: state,
-                        ocrTime: CFAbsoluteTimeGetCurrent() - regionOCRStart,
-                        translateImmediately: translateImmediately
+                        ocrTime: CFAbsoluteTimeGetCurrent() - regionOCRStart
                     ))
                 }
             }
@@ -460,8 +400,7 @@ final class PipelineCoordinator: ObservableObject {
         regionName: String?,
         regionID: UUID?,
         state: RegionPipelineState,
-        ocrTime: Double,
-        translateImmediately: Bool
+        ocrTime: Double
     ) -> RegionFrameWork {
         // Filter by region (if specified)
         let filteredFrame: OCRFrame
@@ -535,7 +474,7 @@ final class PipelineCoordinator: ObservableObject {
             }
 
             // Wait until the text stops changing (typewriter effect, fade-in)
-            guard translateImmediately || state.isStable(text) else { continue }
+            guard state.isStable(text) else { continue }
 
             // Back off after a failed request instead of retrying every frame
             if let failed = state.failedAt[text], now - failed < retryDelay { continue }
