@@ -41,6 +41,7 @@ final class TranslationPanelData: ObservableObject {
 /// The SwiftUI view rendered inside the floating panel
 struct TranslationPanelContent: View {
     @ObservedObject var data: TranslationPanelData
+    @ObservedObject private var settings = AppSettings.shared
     let onClose: () -> Void
 
     var body: some View {
@@ -127,6 +128,13 @@ struct TranslationPanelContent: View {
             Divider()
                 .background(Color.white.opacity(0.1))
 
+            // Region on/off toggles
+            if !settings.captureRegions.isEmpty {
+                regionToggles
+                Divider()
+                    .background(Color.white.opacity(0.1))
+            }
+
             // Translation entries
             if data.entries.isEmpty {
                 VStack(spacing: 8) {
@@ -151,6 +159,44 @@ struct TranslationPanelContent: View {
                     .padding(.vertical, 6)
                 }
             }
+        }
+    }
+
+    // MARK: - Region Toggles
+
+    /// One chip per region — click to show/hide that region's translations
+    private var regionToggles: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(settings.captureRegions) { region in
+                    Button {
+                        settings.toggleRegion(id: region.id)
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: region.isEnabled ? "eye.fill" : "eye.slash")
+                                .font(.system(size: 9))
+                            Text(region.name)
+                                .font(.system(size: 11, weight: .medium))
+                                .lineLimit(1)
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .foregroundColor(region.isEnabled ? .white : .white.opacity(0.4))
+                        .background(
+                            Capsule()
+                                .fill(Color(nsColor: region.color.nsColor).opacity(region.isEnabled ? 0.45 : 0.08))
+                        )
+                        .overlay(
+                            Capsule()
+                                .stroke(Color(nsColor: region.color.nsColor).opacity(region.isEnabled ? 0.9 : 0.35), lineWidth: 1)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .help(region.isEnabled ? "ซ่อน \(region.name)" : "แสดง \(region.name)")
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
         }
     }
 

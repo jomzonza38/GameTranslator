@@ -60,6 +60,15 @@ final class StatusBarController: NSObject, ObservableObject {
         hotKeys.register(keyCode: kVK_ANSI_Y, modifiers: modifiers) { [weak self] in
             Task { @MainActor in self?.translateOnce() }
         }
+
+        // ⌃⌥1…9 show/hide region 1…9
+        let numberKeys = [kVK_ANSI_1, kVK_ANSI_2, kVK_ANSI_3, kVK_ANSI_4, kVK_ANSI_5,
+                          kVK_ANSI_6, kVK_ANSI_7, kVK_ANSI_8, kVK_ANSI_9]
+        for (index, keyCode) in numberKeys.enumerated() {
+            hotKeys.register(keyCode: keyCode, modifiers: modifiers) { [weak self] in
+                Task { @MainActor in self?.toggleRegion(at: index) }
+            }
+        }
     }
 
     func rebuildMenu() {
@@ -159,12 +168,25 @@ final class StatusBarController: NSObject, ObservableObject {
                 let orderLabel = "\(index + 1)."
                 let colorDot = colorCircle(for: region.color)
                 let regionItem = NSMenuItem(
-                    title: "   \(orderLabel) \(colorDot) \(region.name)",
+                    title: "   \(orderLabel) \(colorDot) \(region.name)\(region.isEnabled ? "" : "  (ซ่อน)")",
                     action: nil,
                     keyEquivalent: ""
                 )
+                regionItem.state = region.isEnabled ? .on : .off
 
                 let subMenu = NSMenu()
+
+                let toggleItem = NSMenuItem(
+                    title: region.isEnabled ? "🙈 ซ่อนพื้นที่นี้" : "👁 แสดงพื้นที่นี้",
+                    action: #selector(toggleRegionAction(_:)),
+                    keyEquivalent: index < 9 ? "\(index + 1)" : ""
+                )
+                toggleItem.keyEquivalentModifierMask = [.control, .option]
+                toggleItem.target = self
+                toggleItem.representedObject = region.id
+                subMenu.addItem(toggleItem)
+
+                subMenu.addItem(NSMenuItem.separator())
 
                 // Move up (disabled if first)
                 let moveUpItem = NSMenuItem(
@@ -423,6 +445,18 @@ final class StatusBarController: NSObject, ObservableObject {
         let color = settings.nextRegionColor
         let name = settings.nextRegionName
         pipeline.addCaptureRegion(name: name, color: color)
+    }
+
+    @objc private func toggleRegionAction(_ sender: NSMenuItem) {
+        guard let regionId = sender.representedObject as? UUID else { return }
+        pipeline.toggleCaptureRegion(id: regionId)
+    }
+
+    /// ⌃⌥1…9 — show/hide region N
+    private func toggleRegion(at index: Int) {
+        let regions = AppSettings.shared.captureRegions
+        guard regions.indices.contains(index) else { return }
+        pipeline.toggleCaptureRegion(id: regions[index].id)
     }
 
     @objc private func moveRegionUpAction(_ sender: NSMenuItem) {

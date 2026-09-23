@@ -311,12 +311,21 @@ private struct CaptureSettingsTab: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 } else {
-                    ForEach(settings.captureRegions) { region in
-                        HStack {
-                            Circle()
-                                .fill(Color(nsColor: region.color.nsColor))
-                                .frame(width: 8, height: 8)
-                            Text(region.name)
+                    ForEach(Array(settings.captureRegions.enumerated()), id: \.element.id) { index, region in
+                        Toggle(isOn: Binding(
+                            get: { region.isEnabled },
+                            set: { _ in settings.toggleRegion(id: region.id) }
+                        )) {
+                            HStack {
+                                Circle()
+                                    .fill(Color(nsColor: region.color.nsColor))
+                                    .frame(width: 8, height: 8)
+                                Text(region.name)
+                                if index < 9 {
+                                    Text("⌃⌥\(index + 1)")
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
                         }
                         .font(.caption)
                     }

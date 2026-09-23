@@ -20,6 +20,8 @@ struct TranslatedRegion: Identifiable {
     let regionColor: RegionColor?
     /// Name of the capture region this text belongs to
     let regionName: String?
+    /// ID of the capture region this text belongs to (nil = full-screen)
+    let regionID: UUID?
 
     init(
         originalText: String,
@@ -28,7 +30,8 @@ struct TranslatedRegion: Identifiable {
         fontSize: CGFloat,
         isPending: Bool = false,
         regionColor: RegionColor? = nil,
-        regionName: String? = nil
+        regionName: String? = nil,
+        regionID: UUID? = nil
     ) {
         self.id = UUID()
         self.originalText = originalText
@@ -39,6 +42,7 @@ struct TranslatedRegion: Identifiable {
         self.lastUpdated = Date()
         self.regionColor = regionColor
         self.regionName = regionName
+        self.regionID = regionID
     }
 
     /// Create a copy with updated translation
@@ -50,7 +54,8 @@ struct TranslatedRegion: Identifiable {
             fontSize: fontSize,
             isPending: false,
             regionColor: regionColor,
-            regionName: regionName
+            regionName: regionName,
+            regionID: regionID
         )
     }
 
@@ -63,7 +68,8 @@ struct TranslatedRegion: Identifiable {
             fontSize: fontSize,
             isPending: isPending,
             regionColor: regionColor,
-            regionName: regionName
+            regionName: regionName,
+            regionID: regionID
         )
     }
 }

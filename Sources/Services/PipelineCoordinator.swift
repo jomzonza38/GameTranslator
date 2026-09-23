@@ -1,6 +1,7 @@
 import Foundation
 import CoreGraphics
 import AppKit
+import Combine
 
 /// Coordinates the full translation pipeline:
 /// Screen Capture → OCR → Text Diff → Translation → Overlay
@@ -51,6 +52,8 @@ final class PipelineCoordinator: ObservableObject {
     /// Recent lines and glossary sent to LLM providers
     private let contextBuilder = TranslationContextBuilder()
 
+    private var cancellables = Set<AnyCancellable>()
+
     // MARK: - Init
 
     init() {
@@ -60,6 +63,17 @@ final class PipelineCoordinator: ObservableObject {
 
         screenCapture.delegate = self
         ocrService.minimumConfidence = settings.minimumConfidence
+
+        // When a region is switched off (or deleted), remove its translations from
+        // the screen right away — even while paused — and let the menu refresh.
+        settings.$captureRegions
+            .dropFirst()
+            .sink { [weak self] regions in
+                Task { @MainActor in
+                    self?.applyRegionVisibility(regions)
+                }
+            }
+            .store(in: &cancellables)
     }
 
     // MARK: - Control
@@ -241,6 +255,34 @@ final class PipelineCoordinator: ObservableObject {
         onRegionsChanged?()
     }
 
+    /// Show/hide one region's translations (without deleting the region)
+    func toggleCaptureRegion(id: UUID) {
+        settings.toggleRegion(id: id)
+        if let region = settings.captureRegions.first(where: { $0.id == id }) {
+            GameLog.log("Region \(region.name) \(region.isEnabled ? "shown" : "hidden")")
+        }
+    }
+
+    /// Drop on-screen boxes that belong to regions that are now off or deleted
+    private func applyRegionVisibility(_ regions: [CaptureRegion]) {
+        let enabledIDs = Set(regions.filter(\.isEnabled).map(\.id))
+        let visible = currentRegions.filter { region in
+            guard let id = region.regionID else { return regions.isEmpty }
+            return enabledIDs.contains(id)
+        }
+        if visible.count != currentRegions.count {
+            currentRegions = visible
+            if isRunning, let windowFrame = screenCapture.currentWindowFrame {
+                if settings.displayMode == .overlay {
+                    overlayController.updateRegions(visible, windowFrame: windowFrame)
+                } else {
+                    panelController.updateRegions(visible)
+                }
+            }
+        }
+        onRegionsChanged?()
+    }
+
     /// Check whether the current provider has its API key configured
     private func hasApiKey(for provider: AppSettings.TranslationProviderType) -> Bool {
         switch provider {
@@ -292,6 +334,7 @@ final class PipelineCoordinator: ObservableObject {
         let state: RegionPipelineState
         let regionColor: RegionColor?
         let regionName: String?
+        let regionID: UUID?
         /// Texts on screen in this region (after line merging), in reading order
         let currentTexts: [DetectedText]
         /// Texts that need an API translation this frame
@@ -306,30 +349,35 @@ final class PipelineCoordinator: ObservableObject {
         await applyGlossaryChangesIfNeeded()
 
         do {
-            // Step 1: OCR (whole frame — shared across all regions)
+            // Step 1: OCR settings
             // Pick up the latest OCR settings every frame so changes apply while running
             ocrService.minimumConfidence = settings.minimumConfidence
             ocrService.recognitionLevel = settings.effectiveOCRAccuracy == .accurate ? .accurate : .fast
             ocrService.recognitionLanguages = settings.sourceLanguage.visionLanguages
             ocrService.minimumTextLength = settings.sourceLanguage.usesWordSpacing ? 2 : 1
 
-            let ocrStart = CFAbsoluteTimeGetCurrent()
             let imageSize = CGSize(width: image.width, height: image.height)
-            let ocrFrame = try await ocrService.recognizeText(in: image, imageSize: imageSize)
-            let ocrTime = CFAbsoluteTimeGetCurrent() - ocrStart
-
             let windowFrame = screenCapture.currentWindowFrame ?? contentRect
             let captureRegions = settings.captureRegions
+            let ocrStart = CFAbsoluteTimeGetCurrent()
+            var textsDetected = 0
 
-            // Step 2: per region — filter, merge lines, diff, reuse known translations
+            // Step 2: per region — OCR, merge lines, diff, reuse known translations
             var works: [RegionFrameWork] = []
             if captureRegions.isEmpty {
+                // No regions — read the whole window
+                let ocrFrame = try await ocrService.recognizeText(in: image, imageSize: imageSize)
+                textsDetected += ocrFrame.texts.count
                 works.append(prepareRegion(
                     ocrFrame: ocrFrame, filterRegion: nil, regionColor: nil, regionName: nil,
-                    state: globalState, ocrTime: ocrTime, translateImmediately: translateImmediately
+                    regionID: nil, state: globalState,
+                    ocrTime: CFAbsoluteTimeGetCurrent() - ocrStart,
+                    translateImmediately: translateImmediately
                 ))
             } else {
-                for captureRegion in captureRegions {
+                // OCR only the pixels inside each enabled region, so nothing outside
+                // the frame can be read. Disabled regions are skipped entirely.
+                for captureRegion in captureRegions where captureRegion.isEnabled {
                     let state: RegionPipelineState
                     if let existing = regionStates[captureRegion.id] {
                         state = existing
@@ -337,13 +385,25 @@ final class PipelineCoordinator: ObservableObject {
                         state = RegionPipelineState()
                         regionStates[captureRegion.id] = state
                     }
+
+                    let regionOCRStart = CFAbsoluteTimeGetCurrent()
+                    let ocrFrame = try await ocrService.recognizeText(
+                        in: image,
+                        imageSize: imageSize,
+                        cropTo: captureRegion.rect
+                    )
+                    textsDetected += ocrFrame.texts.count
+
                     works.append(prepareRegion(
                         ocrFrame: ocrFrame, filterRegion: captureRegion.rect,
                         regionColor: captureRegion.color, regionName: captureRegion.name,
-                        state: state, ocrTime: ocrTime, translateImmediately: translateImmediately
+                        regionID: captureRegion.id, state: state,
+                        ocrTime: CFAbsoluteTimeGetCurrent() - regionOCRStart,
+                        translateImmediately: translateImmediately
                     ))
                 }
             }
+            let ocrTime = CFAbsoluteTimeGetCurrent() - ocrStart
 
             // Step 3: one translation request for every region together
             let translateStart = CFAbsoluteTimeGetCurrent()
@@ -360,6 +420,7 @@ final class PipelineCoordinator: ObservableObject {
                     options: layoutOptions,
                     regionColor: work.regionColor,
                     regionName: work.regionName,
+                    regionID: work.regionID,
                     translation: work.state.translation(for:)
                 )
             }
@@ -381,7 +442,7 @@ final class PipelineCoordinator: ObservableObject {
                 ocrTime: ocrTime,
                 translateTime: translateTime,
                 totalTime: totalTime,
-                textsDetected: ocrFrame.texts.count,
+                textsDetected: textsDetected,
                 textsTranslated: allTranslatedRegions.count
             )
         } catch {
@@ -397,6 +458,7 @@ final class PipelineCoordinator: ObservableObject {
         filterRegion: CGRect?,
         regionColor: RegionColor?,
         regionName: String?,
+        regionID: UUID?,
         state: RegionPipelineState,
         ocrTime: Double,
         translateImmediately: Bool
@@ -489,6 +551,7 @@ final class PipelineCoordinator: ObservableObject {
             state: state,
             regionColor: regionColor,
             regionName: regionName,
+            regionID: regionID,
             currentTexts: currentTexts,
             textsToTranslate: textsToTranslate
         )

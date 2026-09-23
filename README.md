@@ -11,7 +11,7 @@ A macOS menu bar app that captures text from a game window, recognizes it with O
 - **Screen capture** via ScreenCaptureKit — pick a specific game window
 - **OCR** with Apple Vision, Fast or Accurate mode
 - **Source languages**: English, Japanese, Chinese (Simplified / Traditional), Korean
-- **Region selection** — drag to select an area (e.g. a dialog box) and translate only that region
+- **Region selection** — drag to select an area (e.g. a dialog box); only the pixels inside it are read. Each region can be shown/hidden from the panel, the menu or ⌃⌥1…9
 - **Text diff** (Levenshtein) so unchanged text isn't re-translated, plus a translation cache
 - **Two display modes**
   - *Overlay* — Thai text drawn over the original positions
@@ -31,6 +31,7 @@ A macOS menu bar app that captures text from a game window, recognizes it with O
 | ⌃⌥P | Pause / resume continuous translation |
 | ⌃⌥Y | Translate the current screen once |
 | ⌃⌥H | Hide / show translations |
+| ⌃⌥1…9 | Show / hide region 1…9 |
 | ⌘⇧R | Add a translation region (menu) |
 | ⌘⇧L | Translation history (menu) |
 

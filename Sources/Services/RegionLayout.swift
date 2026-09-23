@@ -77,6 +77,7 @@ enum RegionLayout {
         options: Options,
         regionColor: RegionColor?,
         regionName: String?,
+        regionID: UUID? = nil,
         translation: (String) -> String?
     ) -> [TranslatedRegion] {
         texts.compactMap { detected -> TranslatedRegion? in
@@ -116,7 +117,8 @@ enum RegionLayout {
                 screenRect: screenRect,
                 fontSize: fontSize,
                 regionColor: regionColor,
-                regionName: regionName
+                regionName: regionName,
+                regionID: regionID
             )
         }
     }

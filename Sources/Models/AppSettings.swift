@@ -455,6 +455,18 @@ final class AppSettings: ObservableObject {
         captureRegions.append(region)
     }
 
+    /// Regions that are switched on
+    var enabledRegions: [CaptureRegion] {
+        captureRegions.filter(\.isEnabled)
+    }
+
+    /// Show/hide one region's translations without deleting it
+    func toggleRegion(id: UUID) {
+        if let index = captureRegions.firstIndex(where: { $0.id == id }) {
+            captureRegions[index].isEnabled.toggle()
+        }
+    }
+
     func removeRegion(id: UUID) {
         captureRegions.removeAll { $0.id == id }
     }

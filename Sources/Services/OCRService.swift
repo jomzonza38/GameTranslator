@@ -104,6 +104,41 @@ final class OCRService: @unchecked Sendable {
         }
     }
 
+    /// OCR only the pixels inside `normalizedRect` (top-left origin, relative to the
+    /// whole image). Text outside the rectangle is never read. Bounding boxes in the
+    /// result are converted back to coordinates relative to the whole image.
+    func recognizeText(in image: CGImage, imageSize: CGSize, cropTo normalizedRect: CGRect) async throws -> OCRFrame {
+        let width = CGFloat(image.width)
+        let height = CGFloat(image.height)
+        let pixelRect = CGRect(
+            x: normalizedRect.minX * width,
+            y: normalizedRect.minY * height,
+            width: normalizedRect.width * width,
+            height: normalizedRect.height * height
+        )
+        .integral
+        .intersection(CGRect(x: 0, y: 0, width: width, height: height))
+
+        guard pixelRect.width >= 8, pixelRect.height >= 8,
+              let cropped = image.cropping(to: pixelRect) else {
+            return OCRFrame(texts: [], imageSize: imageSize)
+        }
+
+        let croppedFrame = try await recognizeText(in: cropped, imageSize: pixelRect.size)
+
+        let texts = croppedFrame.texts.map { text -> DetectedText in
+            let box = text.boundingBox
+            let mapped = CGRect(
+                x: (pixelRect.minX + box.minX * pixelRect.width) / width,
+                y: (pixelRect.minY + box.minY * pixelRect.height) / height,
+                width: box.width * pixelRect.width / width,
+                height: box.height * pixelRect.height / height
+            )
+            return DetectedText(text: text.text, boundingBox: mapped, confidence: text.confidence)
+        }
+        return OCRFrame(texts: texts, imageSize: imageSize)
+    }
+
     /// Clean up common OCR artifacts to improve translation quality
     /// without slowing down recognition
     static func cleanOCRText(_ text: String) -> String {

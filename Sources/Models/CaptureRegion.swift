@@ -40,12 +40,15 @@ struct CaptureRegion: Identifiable, Equatable {
     /// Normalized coordinates (0...1), top-left origin
     var rect: CGRect
     var color: RegionColor
+    /// Whether this region is translated and shown (toggle without deleting it)
+    var isEnabled: Bool
 
-    init(name: String, rect: CGRect, color: RegionColor) {
+    init(name: String, rect: CGRect, color: RegionColor, isEnabled: Bool = true) {
         self.id = UUID()
         self.name = name
         self.rect = rect
         self.color = color
+        self.isEnabled = isEnabled
     }
 
     // MARK: - UserDefaults Serialization
@@ -58,7 +61,8 @@ struct CaptureRegion: Identifiable, Equatable {
             "y": Double(rect.origin.y),
             "w": Double(rect.width),
             "h": Double(rect.height),
-            "color": color.rawValue
+            "color": color.rawValue,
+            "enabled": isEnabled
         ]
     }
 
@@ -78,5 +82,6 @@ struct CaptureRegion: Identifiable, Equatable {
         self.name = name
         self.rect = CGRect(x: x, y: y, width: w, height: h)
         self.color = color
+        self.isEnabled = dict["enabled"] as? Bool ?? true
     }
 }
