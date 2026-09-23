@@ -252,6 +252,9 @@ final class PipelineCoordinator: ObservableObject {
             return
         }
 
+        // Claim the pipeline now, not inside the Task: frames already queued on the
+        // main actor would otherwise each start their own pipeline before it runs
+        isProcessing = true
         Task { [weak self] in
             await self?.drainPipeline(image: image, contentRect: contentRect)
         }
@@ -261,13 +264,11 @@ final class PipelineCoordinator: ObservableObject {
         var next: (image: CGImage, contentRect: CGRect)? = (image, contentRect)
 
         while let frame = next {
-            isProcessing = true
             await runPipeline(image: frame.image, contentRect: frame.contentRect)
-            isProcessing = false
-
             next = pendingFrame
             pendingFrame = nil
         }
+        isProcessing = false
     }
 
     /// How long to wait before retrying a text whose translation request failed
