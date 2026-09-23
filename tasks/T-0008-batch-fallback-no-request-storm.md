@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **Status** | REVIEW |
+| **Status** | DONE |
 | **Type** | fix |
 | **Priority** | P2 |
 | **Version impact** | patch |
@@ -158,9 +158,22 @@ per on-screen line.
 
 ## Review
 
+**Cowork, 2026-09-23 — DONE.** All criteria are `[test]`/`[code]`/`[build]`.
+
+| AC | Verdict | Note |
+|---|---|---|
+| AC-1…AC-3 | ✅ | `BatchFallbackTests` (fake LLM + stub `URLProtocol`). |
+| AC-4 | ✅ | Google Free uses the same rule; also fixes a double parallel round on split-mismatch failure. |
+| AC-5 | ✅ | 74 tests reported. |
+
+- Req 3 choice (timeouts/5xx/invalid reply still fall back) — accepted.
+- Follow-up (typed HTTP status in `TranslationError`) → ROADMAP backlog.
+- Side finding: these tests use the app as test host, so their `GameLog` lines ("Batch request failed (HTTP 500)…") were appended to the owner's `~/Desktop/GameTranslator.log` at 23:49–23:52. → backlog: tests must not write the user's log.
+
 ## Status history
 | Date | Change | Who | Note |
 |---|---|---|---|
 | 2026-09-23 | → READY | Cowork | created from code audit v1.11.11 |
 | 2026-09-23 | READY → IN_PROGRESS | Claude Code | started |
 | 2026-09-23 | IN_PROGRESS → REVIEW | Claude Code | all ACs pass (no manual ACs) |
+| 2026-09-23 | REVIEW → DONE | Cowork | all automated criteria pass |

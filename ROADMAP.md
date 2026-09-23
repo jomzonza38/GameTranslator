@@ -55,7 +55,9 @@ T-0007 · batch fallback request storm → T-0008 · multi-monitor coordinates �
   lines still show the previous provider's translation.
 - **`build.sh` may reset the Screen Recording grant** — `rm -rf` + copy and
   `codesign --deep` are still suspected (see `CLAUDE.md` gotchas). T-0004 only makes
-  signing failures visible. Related to stability goal 1.
+  signing failures visible. Related to stability goal 1. From T-0004: sign and
+  verify the build output *before* replacing the installed app, so a failed
+  signature never leaves a broken copy in /Applications.
 - **API key field** — every keystroke writes the Keychain, creates a new provider and
   a new `URLSession` that is never invalidated (leak) and sends a warm-up request;
   keys are not trimmed (pasted whitespace → 401).
@@ -69,3 +71,8 @@ T-0007 · batch fallback request storm → T-0008 · multi-monitor coordinates �
   in URL query; `CIContext` per frame; `TranslationCache` LRU O(n); TextTracker /
   layout on the main actor every frame; `GameLog` not thread-safe and logs all game
   text to the Desktop; several window pickers can be open at once.
+- **Unit tests write the owner's log** — the test host is the app, so `GameLog`
+  lines from tests land in `~/Desktop/GameTranslator.log` (seen 2026-09-23 23:49).
+- From T-0008: typed HTTP status in `TranslationError` instead of "HTTP 401: …" text.
+- From T-0009: overlay text `contentsScale` uses `NSScreen.main` — may blur on a
+  Retina + non-Retina pair.

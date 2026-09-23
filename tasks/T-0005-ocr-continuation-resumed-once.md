@@ -133,6 +133,15 @@ Expected: translations appear as before in both modes (same text, positions), no
 
 ## Review
 
+**Cowork, 2026-09-23 — code review passed; waiting for owner's AC-3.**
+
+| AC | Verdict | Note |
+|---|---|---|
+| AC-1 | ✅ | No completion handler; one resume per branch after synchronous `perform`. Mapping moved unchanged into `detectedTexts(from:)`. |
+| AC-2 | ✅ | `OCRServiceTests` run real Vision on generated images (text, blank, crop mapping) — better than asked. |
+| AC-3 | ⏳ owner | |
+| AC-4 | ✅ | 63 tests reported. |
+
 ## Status history
 | Date | Change | Who | Note |
 |---|---|---|---|

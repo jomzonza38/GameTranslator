@@ -157,6 +157,18 @@ Expected: everything is placed exactly as before.
 
 ## Review
 
+**Cowork, 2026-09-23 — code review passed; waiting for owner's AC-3 / AC-4.**
+
+| AC | Verdict | Note |
+|---|---|---|
+| AC-1 | ✅ | `ScreenCoordinatesTests` (primary + taller secondary, spanning, off-screen). |
+| AC-2 | ✅ | No `NSScreen.main` left in CG→AppKit conversion (remaining uses: welcome window placement, panel collapse fallback, text `contentsScale` — not conversions). |
+| AC-3 | ⏳ owner (only if a second display is available — otherwise waive) | |
+| AC-4 | ⏳ owner | |
+| AC-5 | ✅ | 78 tests reported. |
+
+- Follow-up (text `contentsScale` from the overlay's own screen) → ROADMAP backlog, minor.
+
 ## Status history
 | Date | Change | Who | Note |
 |---|---|---|---|

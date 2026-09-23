@@ -166,6 +166,19 @@ before; Screen Recording is **not** asked again.
 
 ## Review
 
+**Cowork, 2026-09-23 — code review passed; waiting for owner's AC-4 / AC-5.**
+
+| AC | Verdict | Note |
+|---|---|---|
+| AC-1 | ✅ | `|| true` gone; failure → Thai message + codesign output + `exit 1`. |
+| AC-2 | ✅ | `--verify --deep --strict`, not ad-hoc, `Authority=` must match (SHA-1 identities skip the name match — reasonable). |
+| AC-3 | ✅ | All checks run before `killall`/`open`. |
+| AC-4, AC-5 | ⏳ owner | |
+| AC-6 | ✅ | Swift untouched. |
+
+- Minor, no action: with `set -o pipefail`, `echo … \| grep -q` could in theory report SIGPIPE; output is tiny, so not a real risk.
+- Follow-up accepted → ROADMAP backlog: sign/verify the build output **before** replacing the installed app (merges with the `rm -rf`/`--deep` item).
+
 ## Status history
 | Date | Change | Who | Note |
 |---|---|---|---|

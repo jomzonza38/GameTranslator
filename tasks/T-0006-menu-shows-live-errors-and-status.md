@@ -139,6 +139,15 @@ Also check: with DeepL Free selected, `📊 เหลือ: …` goes down afte
 
 ## Review
 
+**Cowork, 2026-09-23 — code review passed; waiting for owner's AC-3.**
+
+| AC | Verdict | Note |
+|---|---|---|
+| AC-1 | ✅ | One `NSMenu` for the app lifetime, refilled in `menuNeedsUpdate(_:)`. |
+| AC-2 | ✅ | Nothing observes per-frame stats; rebuild only on open and existing events. |
+| AC-3 | ⏳ owner | |
+| AC-4 | ✅ | |
+
 ## Status history
 | Date | Change | Who | Note |
 |---|---|---|---|

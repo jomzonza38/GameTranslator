@@ -135,6 +135,14 @@ Expected: no overlay appears.
 
 ## Review
 
+**Cowork, 2026-09-23 — code review passed; waiting for owner's AC-2 / AC-3.**
+
+| AC | Verdict | Note |
+|---|---|---|
+| AC-1 | ✅ | Esc path and success path share `showOverlayAfterRegionSelection` (running + Overlay mode only). |
+| AC-2, AC-3 | ⏳ owner | |
+| AC-4 | ✅ | |
+
 ## Status history
 | Date | Change | Who | Note |
 |---|---|---|---|
