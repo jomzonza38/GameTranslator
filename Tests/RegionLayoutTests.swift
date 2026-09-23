@@ -61,5 +61,6 @@ final class RegionLayoutTests: XCTestCase {
     func testCleanOCRText() {
         XCTAssertEqual(OCRService.cleanOCRText("Helllllo   world"), "Hello world")
         XCTAssertEqual(OCRService.cleanOCRText("|Start Game~"), "Start Game")
+        XCTAssertEqual(OCRService.cleanOCRText("Wait... what?!!!"), "Wait... what?!!!")
     }
 }

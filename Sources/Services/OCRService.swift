@@ -145,8 +145,9 @@ final class OCRService: @unchecked Sendable {
         var result = text
 
         // Remove repeated characters that OCR sometimes produces (e.g., "Helllo" → "Hello")
-        // Only collapse 3+ repeats of the same character
-        let pattern = "(.)\\1{2,}"
+        // Only collapse 3+ repeats of the same letter — repeated punctuation is
+        // real text ("Wait...", "!!!") and must stay as it is
+        let pattern = "(\\p{L})\\1{2,}"
         if let regex = try? NSRegularExpression(pattern: pattern) {
             result = regex.stringByReplacingMatches(
                 in: result,
