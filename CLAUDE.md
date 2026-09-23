@@ -15,6 +15,26 @@ overlay on the text or in a floating panel. UI strings are Thai.
 - Commit author: `Jom <feel2hurt@gmail.com>`. Write clear commit bodies (what + why).
 - Reply to the owner in Thai; technical terms in English are fine.
 
+### Stability rules (from the owner — must hold after every change)
+
+1. **A rebuild must not bring back the Screen Recording prompt.** Code changes
+   and `./build.sh` must keep the TCC identity stable: same bundle ID, same
+   Apple Development signing identity (never ad-hoc `-`), no change to how the
+   bundle is installed or signed unless that is the task. If a change could
+   reset the grant (see "macOS permission gotchas" below), say so to the owner
+   *before* committing. Never add new calls that can pop the system dialog
+   (`SCShareableContent` without preflight, extra `CGRequestScreenCaptureAccess()`).
+2. **After the app tells the user to reopen (the "Quit & Reopen" / 🔄 เปิดแอปใหม่
+   flow, or the game being closed and started again), the app must not crash or
+   freeze.** A missing/closed game window or a stopped SCStream must be handled
+   gracefully: stop capture, clear the overlay, show a Thai message — no
+   force-unwraps, no infinite waits, no blocked main thread.
+3. **The build must not break.** Before every code commit, run the unit tests
+   and a Release build and confirm `** TEST SUCCEEDED **` / `BUILD SUCCEEDED`
+   with no `error:` lines. Never commit code that does not compile. If Xcode is
+   not available (e.g. Linux sandbox), say clearly that it was not built and ask
+   the owner to run `./build.sh` before relying on it.
+
 ## Build, run, test
 
 ```bash
