@@ -17,6 +17,8 @@ final class TranslationPanelData: ObservableObject {
 
     @Published var entries: [Entry] = []
     @Published var isCollapsed = false
+    /// Index of the region chip scrolled to the left edge
+    var chipScrollIndex = 0
 
     func update(from regions: [TranslatedRegion]) {
         // Sort by vertical position (top to bottom) for natural reading order
@@ -164,39 +166,81 @@ struct TranslationPanelContent: View {
 
     // MARK: - Region Toggles
 
-    /// One chip per region — click to show/hide that region's translations
+    /// One chip per region — click to show/hide that region's translations.
+    /// Scrolls sideways (trackpad, shift+wheel or the ‹ › buttons) when there are many.
     private var regionToggles: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                ForEach(settings.captureRegions) { region in
-                    Button {
-                        settings.toggleRegion(id: region.id)
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: region.isEnabled ? "eye.fill" : "eye.slash")
-                                .font(.system(size: 9))
-                            Text(region.name)
-                                .font(.system(size: 11, weight: .medium))
-                                .lineLimit(1)
+        ScrollViewReader { proxy in
+            HStack(spacing: 2) {
+                scrollButton("chevron.left") {
+                    scrollChips(by: -1, proxy: proxy)
+                }
+
+                ScrollView(.horizontal, showsIndicators: true) {
+                    HStack(spacing: 6) {
+                        ForEach(settings.captureRegions) { region in
+                            regionChip(region)
+                                .id(region.id)
                         }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .foregroundColor(region.isEnabled ? .white : .white.opacity(0.4))
-                        .background(
-                            Capsule()
-                                .fill(Color(nsColor: region.color.nsColor).opacity(region.isEnabled ? 0.45 : 0.08))
-                        )
-                        .overlay(
-                            Capsule()
-                                .stroke(Color(nsColor: region.color.nsColor).opacity(region.isEnabled ? 0.9 : 0.35), lineWidth: 1)
-                        )
                     }
-                    .buttonStyle(.plain)
-                    .help(region.isEnabled ? "ซ่อน \(region.name)" : "แสดง \(region.name)")
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 6)
+                }
+
+                scrollButton("chevron.right") {
+                    scrollChips(by: 1, proxy: proxy)
                 }
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
+            .padding(.horizontal, 4)
+        }
+    }
+
+    private func regionChip(_ region: CaptureRegion) -> some View {
+        Button {
+            settings.toggleRegion(id: region.id)
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: region.isEnabled ? "eye.fill" : "eye.slash")
+                    .font(.system(size: 9))
+                Text(region.name)
+                    .font(.system(size: 11, weight: .medium))
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .foregroundColor(region.isEnabled ? .white : .white.opacity(0.4))
+            .background(
+                Capsule()
+                    .fill(Color(nsColor: region.color.nsColor).opacity(region.isEnabled ? 0.45 : 0.08))
+            )
+            .overlay(
+                Capsule()
+                    .stroke(Color(nsColor: region.color.nsColor).opacity(region.isEnabled ? 0.9 : 0.35), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .help(region.isEnabled ? "ซ่อน \(region.name)" : "แสดง \(region.name)")
+    }
+
+    private func scrollButton(_ systemName: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(.white.opacity(0.5))
+                .frame(width: 18, height: 24)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Move the first visible chip by `step` (roughly one chip per click)
+    private func scrollChips(by step: Int, proxy: ScrollViewProxy) {
+        let regions = settings.captureRegions
+        guard !regions.isEmpty else { return }
+        let target = min(max(data.chipScrollIndex + step, 0), regions.count - 1)
+        data.chipScrollIndex = target
+        withAnimation(.easeInOut(duration: 0.2)) {
+            proxy.scrollTo(regions[target].id, anchor: .leading)
         }
     }
 
