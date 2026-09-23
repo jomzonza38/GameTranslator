@@ -117,7 +117,7 @@ Recording permission again. This protects stability goal 1.
 
 **Outcome:** PARTIAL — all `[code]`/`[build]` criteria pass; AC-4 and AC-5 pending owner
 **Version:** none (script-only change, as specified)
-**Commit:** not committed (waiting for owner)
+**Commit:** `7a9618f`
 
 ### Acceptance criteria
 | AC | Result | Evidence |
