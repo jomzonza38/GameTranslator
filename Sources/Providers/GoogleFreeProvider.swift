@@ -27,7 +27,7 @@ final class GoogleFreeProvider: TranslationProvider {
     }
 
     func translate(_ text: String, from: String, to: String) async throws -> String {
-        let encodedText = text.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? text
+        let encodedText = Self.queryEscape(text)
 
         let urlString = "https://translate.googleapis.com/translate_a/single"
             + "?client=gtx"
@@ -89,6 +89,14 @@ final class GoogleFreeProvider: TranslationProvider {
         } catch {
             throw TranslationError.networkError(underlying: error)
         }
+    }
+
+    /// Percent-encode a query value. `.urlQueryAllowed` leaves `&`, `=` and `+`
+    /// unescaped, so "Salt & Pepper" would be cut at the `&` and `+` read as a space.
+    static func queryEscape(_ value: String) -> String {
+        var allowed = CharacterSet.urlQueryAllowed
+        allowed.remove(charactersIn: "&=+?/#")
+        return value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
     }
 
     /// Batch translation: send all texts in ONE API call for speed AND better quality.
