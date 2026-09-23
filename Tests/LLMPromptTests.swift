@@ -43,6 +43,36 @@ final class LLMPromptTests: XCTestCase {
         XCTAssertFalse(prompt.contains("The game is"))
     }
 
+    func testSanitizeFallsBackToSourceWhenModelAsksForContext() {
+        let chatter = """
+        I need more context to provide an accurate translation. "Cai" alone isn't enough information.
+
+        Could you please provide:
+        1. The full dialogue or sentence containing "Cai"
+        """
+        XCTAssertEqual(LLMPrompt.sanitize(chatter, source: "Cai"), "Cai")
+        XCTAssertEqual(LLMPrompt.sanitize("I'm sorry, I can't translate that.", source: "Go"), "Go")
+    }
+
+    func testSanitizeKeepsRealTranslations() {
+        XCTAssertEqual(LLMPrompt.sanitize("  ไค  ", source: "Cai"), "ไค")
+        XCTAssertEqual(LLMPrompt.sanitize("\"เราต้องไปแล้ว\"", source: "We have to go"), "เราต้องไปแล้ว")
+        XCTAssertEqual(LLMPrompt.sanitize("[1] ลาก่อน", source: "Goodbye"), "ลาก่อน")
+        // A name kept in English is fine
+        XCTAssertEqual(LLMPrompt.sanitize("Cai", source: "Cai"), "Cai")
+        // Dialogue that itself says "could you" translates normally
+        XCTAssertEqual(
+            LLMPrompt.sanitize("ช่วยเปิดประตูให้หน่อยได้ไหม", source: "Could you open the door?"),
+            "ช่วยเปิดประตูให้หน่อยได้ไหม"
+        )
+        XCTAssertEqual(LLMPrompt.sanitize("", source: "Hi"), "Hi")
+    }
+
+    func testSystemPromptForbidsQuestions() {
+        let prompt = LLMPrompt.system(batch: false, context: TranslationContext(sourceLanguageName: "English"))
+        XCTAssertTrue(prompt.contains("never ask for more context"))
+    }
+
     func testBasicContextMapsLanguageCode() {
         XCTAssertEqual(TranslationContext.basic(from: "ja").sourceLanguageName, "Japanese")
         XCTAssertEqual(TranslationContext.basic(from: "zh-TW").sourceLanguageName, "Traditional Chinese")

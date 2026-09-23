@@ -36,7 +36,7 @@ extension LLMChatProvider {
                 maxTokens: 2000
             )
             if let results = LLMPrompt.parseNumbered(reply, count: texts.count) {
-                return results
+                return zip(results, texts).map { LLMPrompt.sanitize($0, source: $1) }
             }
         } catch {
             // Fall through to per-line requests, which surface the real error if it persists
@@ -50,7 +50,7 @@ extension LLMChatProvider {
             user: text,
             maxTokens: 500
         )
-        return reply.trimmingCharacters(in: .whitespacesAndNewlines)
+        return LLMPrompt.sanitize(reply, source: text)
     }
 
     private func translateEach(_ texts: [String], context: TranslationContext) async throws -> [String] {
@@ -91,6 +91,8 @@ enum LLMPrompt {
         lines.append("3) Use natural Thai that feels immersive and fitting for a game script.")
         lines.append("4) Keep character names, proper nouns, and game terms in their original form unless the glossary below gives a Thai term.")
         lines.append("5) Keep it concise — match the original's brevity.")
+        lines.append("6) The input is raw on-screen game text captured by OCR. It may be a single word, a character name, a button label or a sentence fragment. Always output a translation — never ask questions, never ask for more context, never explain or add notes.")
+        lines.append("7) If the text is a name or cannot be meaningfully translated, write it in Thai script or return it unchanged.")
 
         if !context.glossary.isEmpty {
             lines.append("")
@@ -109,6 +111,49 @@ enum LLMPrompt {
         }
 
         return lines.joined(separator: "\n")
+    }
+
+    /// Clean a model reply for one line. If the model answered with chatter instead of a
+    /// translation (asking for context, apologizing, explaining), fall back to the source text.
+    static func sanitize(_ reply: String, source: String) -> String {
+        var text = reply.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if let prefix = text.range(of: #"^\[\d+\]\s*"#, options: .regularExpression) {
+            text.removeSubrange(prefix)
+        }
+
+        // Strip quotes wrapped around the whole reply
+        let quotes: Set<Character> = ["\"", "“", "”", "'", "「", "」", "『", "』"]
+        while text.count >= 2, let first = text.first, let last = text.last,
+              quotes.contains(first), quotes.contains(last) {
+            text = String(text.dropFirst().dropLast()).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        if text.isEmpty || looksLikeChatter(text, source: source) {
+            return source
+        }
+        return text
+    }
+
+    /// True when a reply reads like the model talking to the user rather than a translation
+    static func looksLikeChatter(_ reply: String, source: String) -> Bool {
+        let hasThai = reply.unicodeScalars.contains { (0x0E00...0x0E7F).contains($0.value) }
+
+        // Long reply without any Thai script — not a Thai translation
+        if !hasThai && reply.count > source.count + 20 {
+            return true
+        }
+
+        let lower = reply.lowercased()
+        let sourceLower = source.lowercased()
+        let markers = [
+            "more context", "need more", "could you", "please provide", "provide the full",
+            "not enough information", "isn't enough", "is not enough", "i'm sorry", "i am sorry",
+            "i cannot", "i can't", "as an ai", "here is the translation", "here's the translation",
+            "ต้องการบริบท", "ข้อมูลไม่เพียงพอ", "กรุณาให้ข้อมูล"
+        ]
+        let hasMarker = markers.contains { lower.contains($0) && !sourceLower.contains($0) }
+        return hasMarker && reply.count > source.count * 2
     }
 
     /// "[1] first\n[2] second..."
