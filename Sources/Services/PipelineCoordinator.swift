@@ -29,22 +29,6 @@ final class PipelineCoordinator: ObservableObject {
 
     // MARK: - Per-Region Pipeline State
 
-    /// Holds the pipeline state (text tracker, caches) for each capture region.
-    /// When no regions are defined, a single "global" state is used.
-    private class RegionPipelineState {
-        let textTracker = TextTracker()
-        var cachedTranslations: [String: String] = [:]
-        var staleTranslations: [String: (translation: String, expiry: CFAbsoluteTime)] = [:]
-        var lastLoggedTextCount = -1
-
-        func reset() {
-            textTracker.reset()
-            cachedTranslations.removeAll()
-            staleTranslations.removeAll()
-            lastLoggedTextCount = -1
-        }
-    }
-
     /// Pipeline state for full-screen mode (no regions defined)
     private let globalState = RegionPipelineState()
 
@@ -62,13 +46,8 @@ final class PipelineCoordinator: ObservableObject {
     /// Callback when capture regions change (add/remove/clear)
     var onRegionsChanged: (() -> Void)?
 
-    /// Recently translated lines (oldest first), sent to LLM providers as context
-    private var recentLines: [(original: String, translation: String)] = []
-    private let contextLineCount = 6
-
-    /// Glossary currently applied to translations, and an edit waiting to settle
-    private var appliedGlossary: [GlossaryEntry] = []
-    private var pendingGlossary: (entries: [GlossaryEntry], since: CFAbsoluteTime)?
+    /// Recent lines and glossary sent to LLM providers
+    private let contextBuilder = TranslationContextBuilder()
 
     // MARK: - Init
 
@@ -100,9 +79,7 @@ final class PipelineCoordinator: ObservableObject {
 
         // Per-game profile (title, glossary) keyed by the game's app name
         settings.selectGame(id: scWindow.owningApplication?.applicationName ?? scWindow.title ?? "Unknown")
-        recentLines.removeAll()
-        appliedGlossary = settings.currentProfile.glossary.filter(\.isUsable)
-        pendingGlossary = nil
+        contextBuilder.reset(glossary: settings.currentProfile.glossary)
 
         selectedWindow = window
         isPaused = false
@@ -365,7 +342,7 @@ final class PipelineCoordinator: ObservableObject {
             }
 
             // Step 6: Resolve overlapping regions — push colliding boxes down
-            let resolvedRegions = resolveOverlaps(allTranslatedRegions)
+            let resolvedRegions = RegionLayout.resolveOverlaps(allTranslatedRegions, options: layoutOptions)
 
             // Step 7: ALWAYS update display (overlay or panel)
             currentRegions = resolvedRegions
@@ -416,7 +393,7 @@ final class PipelineCoordinator: ObservableObject {
         }
 
         // Merge adjacent lines
-        let mergedFrame = Self.mergeAdjacentLines(
+        let mergedFrame = RegionLayout.mergeAdjacentLines(
             filteredFrame,
             separator: settings.sourceLanguage.usesWordSpacing ? " " : ""
         )
@@ -478,10 +455,10 @@ final class PipelineCoordinator: ObservableObject {
 
             // Texts that are exactly a glossary term use the fixed translation — no API call
             textsToTranslate = textsToTranslate.filter { detected in
-                guard let entry = appliedGlossary.first(where: { $0.matchesExactly(detected.text) }) else {
+                guard let fixed = contextBuilder.fixedTranslation(for: detected.text) else {
                     return true
                 }
-                state.cachedTranslations[detected.text] = entry.target
+                state.cachedTranslations[detected.text] = fixed
                 return false
             }
 
@@ -492,14 +469,19 @@ final class PipelineCoordinator: ObservableObject {
 
                 let translations = try await translationService.translateBatch(
                     textStrings,
-                    context: makeTranslationContext(for: textStrings)
+                    context: contextBuilder.context(
+                        for: textStrings,
+                        sourceLanguageName: settings.sourceLanguage.englishName,
+                        gameTitle: settings.currentProfile.title,
+                        includeRecentLines: settings.useConversationContext
+                    )
                 )
 
                 // Iterate in on-screen order so the context reads naturally
                 for text in textStrings {
                     guard let translation = translations[text] else { continue }
                     state.cachedTranslations[text] = translation
-                    rememberLine(original: text, translation: translation)
+                    contextBuilder.remember(original: text, translation: translation)
                     TranslationHistory.shared.add(
                         original: text,
                         translation: translation,
@@ -531,53 +513,36 @@ final class PipelineCoordinator: ObservableObject {
             diffResult.newTexts +
             diffResult.changedTexts.map(\.new)
 
-        let regions = buildRegions(
+        let regions = RegionLayout.buildRegions(
             from: allCurrentTexts,
             windowFrame: windowFrame,
-            state: state,
+            options: layoutOptions,
             regionColor: regionColor,
-            regionName: regionName
+            regionName: regionName,
+            translation: state.translation(for:)
         )
 
         return (regions, translateTime)
     }
 
-    // MARK: - Translation Context
+    // MARK: - Layout
 
-    private func makeTranslationContext(for texts: [String]) -> TranslationContext {
-        // Only send glossary terms that occur in this batch to keep prompts short
-        let relevantGlossary = appliedGlossary.filter { entry in
-            texts.contains { entry.appears(in: $0) }
-        }
-        return TranslationContext(
-            sourceLanguageName: settings.sourceLanguage.englishName,
-            gameTitle: settings.currentProfile.title,
-            recentLines: settings.useConversationContext ? Array(recentLines.suffix(contextLineCount)) : [],
-            glossary: relevantGlossary
+    private var layoutOptions: RegionLayout.Options {
+        RegionLayout.Options(
+            autoFontSize: settings.autoFontSize,
+            fixedFontSize: settings.overlayFontSize,
+            showOriginalText: settings.showOriginalText
         )
     }
 
-    /// When the glossary is edited, wait until it has been stable for a moment
-    /// (so typing doesn't trigger re-translation per keystroke), then drop cached
-    /// translations so on-screen text is re-translated with the new terms.
+    // MARK: - Glossary & Caches
+
+    /// Apply glossary edits once they settle, re-translating on-screen text
     private func applyGlossaryChangesIfNeeded() async {
-        let current = settings.currentProfile.glossary.filter(\.isUsable)
-        guard current != appliedGlossary else {
-            pendingGlossary = nil
-            return
-        }
-
-        let now = CFAbsoluteTimeGetCurrent()
-        guard let pending = pendingGlossary, pending.entries == current else {
-            pendingGlossary = (current, now)
-            return
-        }
-        guard now - pending.since >= 1.5 else { return }
-
-        appliedGlossary = current
-        pendingGlossary = nil
+        let glossary = settings.currentProfile.glossary
+        guard contextBuilder.updateGlossary(glossary, now: CFAbsoluteTimeGetCurrent()) else { return }
         await resetTranslationCaches()
-        GameLog.log("Glossary updated (\(current.count) terms) — re-translating on-screen text")
+        GameLog.log("Glossary updated (\(contextBuilder.appliedGlossary.count) terms) — re-translating on-screen text")
     }
 
     /// Forget all cached translations so visible text is translated again
@@ -586,204 +551,8 @@ final class PipelineCoordinator: ObservableObject {
         for state in regionStates.values {
             state.reset()
         }
-        recentLines.removeAll()
+        contextBuilder.clearRecentLines()
         await translationService.clearCache()
-    }
-
-    private func rememberLine(original: String, translation: String) {
-        if recentLines.last?.original == original { return }
-        recentLines.append((original: original, translation: translation))
-        if recentLines.count > contextLineCount * 2 {
-            recentLines.removeFirst(recentLines.count - contextLineCount * 2)
-        }
-    }
-
-    // MARK: - Region Building
-
-    /// Convert detected texts + cached translations into overlay regions
-    private func buildRegions(
-        from texts: [DetectedText],
-        windowFrame: CGRect,
-        state: RegionPipelineState,
-        regionColor: RegionColor?,
-        regionName: String?
-    ) -> [TranslatedRegion] {
-        texts.compactMap { detected -> TranslatedRegion? in
-            guard let translation = state.cachedTranslations[detected.text] ?? state.staleTranslations[detected.text]?.translation else { return nil }
-
-            // Convert normalized bounding box to screen coordinates
-            let screenRect = CGRect(
-                x: windowFrame.origin.x + detected.boundingBox.origin.x * windowFrame.width,
-                y: windowFrame.origin.y + detected.boundingBox.origin.y * windowFrame.height,
-                width: detected.boundingBox.width * windowFrame.width,
-                height: detected.boundingBox.height * windowFrame.height
-            )
-
-            var fontSize = settings.autoFontSize
-                ? OCRService.estimateFontSize(
-                    boundingBoxHeight: detected.boundingBox.height,
-                    windowHeight: windowFrame.height
-                )
-                : settings.overlayFontSize
-
-            // Auto-shrink font so Thai translation fits within ~1.5x the original
-            let displayText = settings.showOriginalText
-                ? "\(translation)\n(\(detected.text))"
-                : translation
-            let maxHeight = screenRect.height * 1.5
-            let minFontSize: CGFloat = 8
-
-            while fontSize > minFontSize {
-                let estimatedHeight = Self.estimateTextHeight(
-                    displayText,
-                    width: screenRect.width,
-                    fontSize: fontSize
-                )
-                if estimatedHeight <= maxHeight {
-                    break
-                }
-                fontSize -= 1
-            }
-
-            return TranslatedRegion(
-                originalText: detected.text,
-                translatedText: translation,
-                screenRect: screenRect,
-                fontSize: fontSize,
-                regionColor: regionColor,
-                regionName: regionName
-            )
-        }
-    }
-
-    // MARK: - Overlap Resolution
-
-    private func resolveOverlaps(_ regions: [TranslatedRegion]) -> [TranslatedRegion] {
-        guard regions.count > 1 else {
-            return regions.map { adjustHeight(for: $0) }
-        }
-
-        var placed = regions.map { adjustHeight(for: $0) }
-        placed.sort { $0.screenRect.minY < $1.screenRect.minY }
-
-        let gap: CGFloat = 4
-        for i in 1..<placed.count {
-            for j in 0..<i {
-                let a = placed[j].screenRect
-                let b = placed[i].screenRect
-
-                let xOverlap = a.minX < b.maxX && b.minX < a.maxX
-                let yOverlap = a.minY < b.maxY && b.minY < a.maxY
-
-                if xOverlap && yOverlap {
-                    let newY = a.maxY + gap
-                    let newRect = CGRect(
-                        x: b.origin.x,
-                        y: newY,
-                        width: b.width,
-                        height: b.height
-                    )
-                    placed[i] = placed[i].withScreenRect(newRect)
-                }
-            }
-        }
-
-        return placed
-    }
-
-    private func adjustHeight(for region: TranslatedRegion) -> TranslatedRegion {
-        let displayText = settings.showOriginalText
-            ? "\(region.translatedText)\n(\(region.originalText))"
-            : region.translatedText
-
-        let estimatedHeight = Self.estimateTextHeight(
-            displayText,
-            width: region.screenRect.width,
-            fontSize: region.fontSize
-        )
-
-        guard estimatedHeight > region.screenRect.height else { return region }
-
-        let cappedHeight = min(estimatedHeight, region.screenRect.height * 1.5)
-
-        let newRect = CGRect(
-            x: region.screenRect.origin.x,
-            y: region.screenRect.origin.y,
-            width: region.screenRect.width,
-            height: cappedHeight
-        )
-        return region.withScreenRect(newRect)
-    }
-
-    private static func estimateTextHeight(_ text: String, width: CGFloat, fontSize: CGFloat) -> CGFloat {
-        let font = NSFont.systemFont(ofSize: fontSize, weight: .medium)
-        let paragraphStyle = NSMutableParagraphStyle()
-        paragraphStyle.lineBreakMode = .byWordWrapping
-
-        let rect = (text as NSString).boundingRect(
-            with: CGSize(width: max(width, 40), height: .greatestFiniteMagnitude),
-            options: [.usesLineFragmentOrigin, .usesFontLeading],
-            attributes: [
-                .font: font,
-                .paragraphStyle: paragraphStyle
-            ],
-            context: nil
-        )
-        return ceil(rect.height) + 8
-    }
-
-    // MARK: - Line Merging
-
-    private static func mergeAdjacentLines(_ frame: OCRFrame, separator: String = " ") -> OCRFrame {
-        guard frame.texts.count > 1 else { return frame }
-
-        let lines = frame.texts.sorted { $0.boundingBox.minY < $1.boundingBox.minY }
-        var merged: [DetectedText] = []
-        var i = 0
-
-        while i < lines.count {
-            var current = lines[i]
-            i += 1
-
-            while i < lines.count {
-                let next = lines[i]
-                let currentBox = current.boundingBox
-                let nextBox = next.boundingBox
-
-                let gap = nextBox.minY - currentBox.maxY
-                let lineHeight = currentBox.height
-
-                let gapOK = gap >= -0.01 && gap < lineHeight * 1.5
-
-                let overlapLeft = max(currentBox.minX, nextBox.minX)
-                let overlapRight = min(currentBox.maxX, nextBox.maxX)
-                let overlapWidth = max(0, overlapRight - overlapLeft)
-                let minWidth = min(currentBox.width, nextBox.width)
-                let horizontalOK = minWidth > 0 && (overlapWidth / minWidth) > 0.3
-
-                guard gapOK && horizontalOK else { break }
-
-                let mergedText = current.text + separator + next.text
-                let mergedBox = CGRect(
-                    x: min(currentBox.minX, nextBox.minX),
-                    y: min(currentBox.minY, nextBox.minY),
-                    width: max(currentBox.maxX, nextBox.maxX) - min(currentBox.minX, nextBox.minX),
-                    height: nextBox.maxY - currentBox.minY
-                )
-                let mergedConfidence = min(current.confidence, next.confidence)
-
-                current = DetectedText(
-                    text: mergedText,
-                    boundingBox: mergedBox,
-                    confidence: mergedConfidence
-                )
-                i += 1
-            }
-
-            merged.append(current)
-        }
-
-        return OCRFrame(texts: merged, imageSize: frame.imageSize)
     }
 }
 
@@ -802,71 +571,6 @@ extension PipelineCoordinator: ScreenCaptureDelegate {
         }
     }
 }
-
-// MARK: - Supporting Types
-
-enum PipelineStatus: String {
-    case idle = "Idle"
-    case capturing = "Capturing..."
-    case running = "Running"
-    case error = "Error"
-
-    var displayName: String {
-        switch self {
-        case .idle: return "พร้อมใช้งาน"
-        case .capturing: return "กำลังจับภาพ..."
-        case .running: return "กำลังทำงาน"
-        case .error: return "เกิดข้อผิดพลาด"
-        }
-    }
-}
-
-struct PipelineStats {
-    var avgOCRTime: Double = 0
-    var avgTranslateTime: Double = 0
-    var avgTotalTime: Double = 0
-    var totalFramesProcessed: Int = 0
-    var totalTextsDetected: Int = 0
-    var totalTextsTranslated: Int = 0
-
-    private var ocrTimes: [Double] = []
-    private var translateTimes: [Double] = []
-    private var totalTimes: [Double] = []
-
-    mutating func update(ocrTime: Double, translateTime: Double, totalTime: Double,
-                         textsDetected: Int, textsTranslated: Int) {
-        totalFramesProcessed += 1
-        totalTextsDetected += textsDetected
-        totalTextsTranslated += textsTranslated
-
-        ocrTimes.append(ocrTime)
-        translateTimes.append(translateTime)
-        totalTimes.append(totalTime)
-
-        if ocrTimes.count > 30 {
-            ocrTimes.removeFirst()
-            translateTimes.removeFirst()
-            totalTimes.removeFirst()
-        }
-
-        avgOCRTime = ocrTimes.reduce(0, +) / Double(ocrTimes.count)
-        avgTranslateTime = translateTimes.reduce(0, +) / Double(translateTimes.count)
-        avgTotalTime = totalTimes.reduce(0, +) / Double(totalTimes.count)
-    }
-}
-
-enum PipelineError: LocalizedError {
-    case invalidWindow
-    case captureNotAvailable
-
-    var errorDescription: String? {
-        switch self {
-        case .invalidWindow: return "เลือก window ไม่ถูกต้อง"
-        case .captureNotAvailable: return "ไม่สามารถจับภาพหน้าจอได้ กรุณาตรวจสอบสิทธิ์ Screen Recording"
-        }
-    }
-}
-
 
 // MARK: - SCWindow import
 import ScreenCaptureKit
