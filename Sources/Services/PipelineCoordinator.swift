@@ -37,6 +37,8 @@ final class PipelineCoordinator: ObservableObject {
     private var selectedWindow: Any? // SCWindow
     private var pendingFrame: (image: CGImage, contentRect: CGRect)?
     private var isProcessing = false
+    /// The running drain loop, cancelled by stop()
+    private var pipelineTask: Task<Void, Never>?
     private let settings = AppSettings.shared
 
     /// Callback when capture regions change (add/remove/clear)
@@ -125,12 +127,18 @@ final class PipelineCoordinator: ObservableObject {
 
     func stop() async {
         guard isRunning else { return }
+        isRunning = false
+
+        // Drop queued frames and stop the in-flight pipeline, so nothing is
+        // translated, added to history or drawn after stopping
+        pipelineTask?.cancel()
+        pipelineTask = nil
+        pendingFrame = nil
 
         await screenCapture.stopCapture()
         overlayController.hide()
         panelController.hide()
 
-        isRunning = false
         status = .idle
         currentRegions = []
         selectedWindow = nil
@@ -247,6 +255,7 @@ final class PipelineCoordinator: ObservableObject {
     // MARK: - Pipeline Processing
 
     private func processFrame(_ image: CGImage, contentRect: CGRect) {
+        guard isRunning else { return }
         guard !isProcessing else {
             pendingFrame = (image, contentRect)
             return
@@ -255,7 +264,7 @@ final class PipelineCoordinator: ObservableObject {
         // Claim the pipeline now, not inside the Task: frames already queued on the
         // main actor would otherwise each start their own pipeline before it runs
         isProcessing = true
-        Task { [weak self] in
+        pipelineTask = Task { [weak self] in
             await self?.drainPipeline(image: image, contentRect: contentRect)
         }
     }
@@ -263,7 +272,7 @@ final class PipelineCoordinator: ObservableObject {
     private func drainPipeline(image: CGImage, contentRect: CGRect) async {
         var next: (image: CGImage, contentRect: CGRect)? = (image, contentRect)
 
-        while let frame = next {
+        while let frame = next, !Task.isCancelled {
             await runPipeline(image: frame.image, contentRect: frame.contentRect)
             next = pendingFrame
             pendingFrame = nil
@@ -345,11 +354,13 @@ final class PipelineCoordinator: ObservableObject {
                 }
             }
             let ocrTime = CFAbsoluteTimeGetCurrent() - ocrStart
+            guard isRunning, !Task.isCancelled else { return }
 
             // Step 3: one translation request for every region together
             let translateStart = CFAbsoluteTimeGetCurrent()
             await translatePending(works)
             let translateTime = CFAbsoluteTimeGetCurrent() - translateStart
+            guard isRunning, !Task.isCancelled else { return }
 
             // Step 4: cache bookkeeping and on-screen boxes per region
             var allTranslatedRegions: [TranslatedRegion] = []
@@ -387,6 +398,7 @@ final class PipelineCoordinator: ObservableObject {
                 textsTranslated: allTranslatedRegions.count
             )
         } catch {
+            guard !Task.isCancelled else { return }
             GameLog.log("✗ Pipeline error: \(error.localizedDescription)")
             lastError = error.localizedDescription
         }
@@ -521,6 +533,9 @@ final class PipelineCoordinator: ObservableObject {
                 )
             )
 
+            // Stopped while waiting — don't record anything for a finished session
+            guard !Task.isCancelled else { return }
+
             // Iterate in on-screen order so the context reads naturally
             for text in texts {
                 guard let translation = translations[text] else { continue }
@@ -538,6 +553,8 @@ final class PipelineCoordinator: ObservableObject {
             }
             lastError = nil
         } catch {
+            // The request was cancelled by stop() — not a real failure
+            guard !Task.isCancelled else { return }
             let now = CFAbsoluteTimeGetCurrent()
             for work in works {
                 for text in work.textsToTranslate {
