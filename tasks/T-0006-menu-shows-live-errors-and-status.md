@@ -97,7 +97,7 @@ the menu is never refreshed, so the user just sees nothing being translated.
 
 **Outcome:** PARTIAL — all `[code]`/`[build]` criteria pass; AC-3 pending owner
 **Version:** 1.11.15 → 1.11.16
-**Commit:** not committed (waiting for owner)
+**Commit:** `0c8273a`
 
 ### Acceptance criteria
 | AC | Result | Evidence |
