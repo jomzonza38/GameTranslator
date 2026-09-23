@@ -126,33 +126,27 @@ final class GoogleFreeProvider: TranslationProvider {
 
         do {
             let translated = try await translate(combined, from: from, to: to)
-
-            // Split result back by newlines
-            let parts = translated.components(separatedBy: "\n")
-                .map { $0.trimmingCharacters(in: .whitespaces) }
-
-            // If we get the same number of parts — success
-            if parts.count == texts.count {
+            if let parts = Self.splitBatch(translated, count: texts.count) {
                 return parts
             }
 
-            // Sometimes Google merges or splits lines. Try to recover by
-            // re-splitting on the translated output more carefully.
-            // If the count is close (±1), pad or trim
-            if parts.count > texts.count {
-                // Google split some lines — rejoin extras onto the last text
-                var result = Array(parts.prefix(texts.count - 1))
-                result.append(parts.dropFirst(texts.count - 1).joined(separator: " "))
-                return result
-            }
-
-            // Fewer parts than expected — fall back to parallel
-            GameLog.log("Batch split mismatch (\(parts.count) vs \(texts.count)), using parallel")
+            // Google merged or split lines — we can't tell which translation belongs
+            // to which text, so translate each one on its own
+            GameLog.log("Batch split mismatch (expected \(texts.count) lines), using parallel")
             return try await translateParallel(texts, from: from, to: to)
         } catch {
             // Batch failed — fall back to parallel
             return try await translateParallel(texts, from: from, to: to)
         }
+    }
+
+    /// Split a newline-joined batch reply back into one translation per text.
+    /// Returns nil when the line count doesn't match: rejoining or padding lines
+    /// would shift every later translation onto the wrong text.
+    static func splitBatch(_ translated: String, count: Int) -> [String]? {
+        let parts = translated.components(separatedBy: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+        return parts.count == count ? parts : nil
     }
 
     /// Parallel translation: each text in its own concurrent request
