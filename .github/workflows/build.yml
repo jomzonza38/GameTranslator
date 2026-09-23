@@ -1,0 +1,70 @@
+name: Build & Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Show Xcode version
+        run: |
+          xcodebuild -version
+          mkdir -p build
+
+      - name: Run unit tests (Debug)
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project GameTranslator.xcodeproj \
+            -scheme GameTranslator \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            -derivedDataPath build \
+            CODE_SIGN_IDENTITY="-" \
+            | tee build/test.log | grep -E "error:|warning: .*deprecated|Test Suite|Executed|FAILED|passed|failed" || true
+          grep -q "** TEST SUCCEEDED **" build/test.log
+
+      - name: Build app (Release)
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project GameTranslator.xcodeproj \
+            -scheme GameTranslator \
+            -configuration Release \
+            -derivedDataPath build \
+            CODE_SIGN_IDENTITY="-" \
+            | tee build/release.log | grep -E "error:|BUILD" || true
+          grep -q "** BUILD SUCCEEDED **" build/release.log
+
+      - name: Upload app
+        uses: actions/upload-artifact@v4
+        with:
+          name: GameTranslator-app
+          path: build/Build/Products/Release/GameTranslator.app
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcodebuild-logs
+          path: build/*.log
