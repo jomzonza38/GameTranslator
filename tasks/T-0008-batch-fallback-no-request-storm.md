@@ -114,7 +114,7 @@ with OpenAI/Claude.
 
 **Outcome:** PASS — all criteria are `[test]`/`[code]`/`[build]` and pass
 **Version:** 1.11.17 → 1.11.18
-**Commit:** not committed (waiting for owner)
+**Commit:** `6e589be`
 
 ### Acceptance criteria
 | AC | Result | Evidence |
