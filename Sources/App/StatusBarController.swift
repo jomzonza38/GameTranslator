@@ -94,6 +94,26 @@ final class StatusBarController: NSObject, ObservableObject {
             }
         }
 
+        // Screen Recording not usable in this running copy yet
+        if !ScreenRecordingPermission.isGranted {
+            menu.addItem(NSMenuItem.separator())
+            let permissionItem = NSMenuItem(
+                title: "⚠️ ยังไม่ได้อนุญาต Screen Recording...",
+                action: #selector(showPermissionInstructions),
+                keyEquivalent: ""
+            )
+            permissionItem.target = self
+            menu.addItem(permissionItem)
+
+            let relaunchItem = NSMenuItem(
+                title: "🔄 เปิดแอปใหม่ (หลังอนุญาตแล้ว)",
+                action: #selector(relaunchApp),
+                keyEquivalent: ""
+            )
+            relaunchItem.target = self
+            menu.addItem(relaunchItem)
+        }
+
         // Error display
         if let error = pipeline.lastError {
             menu.addItem(NSMenuItem.separator())
@@ -340,6 +360,14 @@ final class StatusBarController: NSObject, ObservableObject {
     }
 
     // MARK: - Welcome
+
+    @objc private func showPermissionInstructions() {
+        ScreenRecordingPermission.showInstructions()
+    }
+
+    @objc private func relaunchApp() {
+        ScreenRecordingPermission.relaunch()
+    }
 
     @objc private func showWelcomeAction() {
         showWelcome()

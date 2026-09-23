@@ -10,6 +10,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// was turned off, so it's obvious the app is running.
     private let awaitingPermissionKey = "awaitingScreenRecordingPermission"
 
+    /// Sent by a second copy of the app to the one already running
+    static let showWelcomeNotification = Notification.Name("com.worawalan.GameTranslator.showWelcome")
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Unit tests use the app as host — skip the menu bar UI, permission
         // prompts and the single-instance check so tests run unattended.
@@ -20,8 +23,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Only one copy should run (two copies fight over the menu bar item and log).
         guard waitForOtherInstancesToExit() else {
+            // Opening the app while a copy is still running used to quit silently,
+            // which looked like the app did nothing. Ask the running copy to show
+            // its welcome message instead, then quit this one.
+            GameLog.log("Another copy is still running — asking it to show itself, quitting this one")
+            DistributedNotificationCenter.default().postNotificationName(
+                Self.showWelcomeNotification, object: nil, userInfo: nil, deliverImmediately: true
+            )
+            NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "")
+                .first { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }?
+                .activate()
             NSApp.terminate(nil)
             return
+        }
+
+        DistributedNotificationCenter.default().addObserver(
+            forName: Self.showWelcomeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.statusBarController?.showWelcome()
+            }
         }
 
         GameLog.setup()

@@ -32,10 +32,39 @@ enum ScreenRecordingPermission {
             """
         alert.alertStyle = .informational
         alert.addButton(withTitle: "เปิด System Settings")
+        alert.addButton(withTitle: "เปิดแอปใหม่ (อนุญาตแล้ว)")
         alert.addButton(withTitle: "ทีหลัง")
 
-        if alert.runModal() == .alertFirstButtonReturn {
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
             NSWorkspace.shared.open(settingsURL)
+        case .alertSecondButtonReturn:
+            relaunch()
+        default:
+            break
         }
+    }
+
+    /// Whether Screen Recording is allowed for this running copy. macOS only applies
+    /// a new grant after the app restarts, so this stays false until relaunch.
+    static var isGranted: Bool {
+        CGPreflightScreenCaptureAccess()
+    }
+
+    /// Quit and start the app again (needed after granting Screen Recording).
+    /// The new copy is launched after a short delay so this one has exited.
+    static func relaunch() {
+        let path = Bundle.main.bundlePath
+        GameLog.log("Relaunching \(path)")
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/bin/sh")
+        task.arguments = ["-c", "sleep 1; /usr/bin/open \"$0\"", path]
+        do {
+            try task.run()
+        } catch {
+            GameLog.log("Relaunch failed: \(error.localizedDescription)")
+            return
+        }
+        NSApp.terminate(nil)
     }
 }

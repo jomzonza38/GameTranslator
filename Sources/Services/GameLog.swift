@@ -3,7 +3,11 @@ import Foundation
 /// Simple file logger — writes to ~/Desktop/GameTranslator.log
 /// so we can always read the output regardless of Xcode console
 enum GameLog {
-    private static var logFileURL: URL?
+    /// Set by default so messages logged before setup() (e.g. a duplicate
+    /// launch quitting early) still reach the file
+    private static var logFileURL: URL? = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Desktop")
+        .appendingPathComponent("GameTranslator.log")
     private static let dateFormatter: DateFormatter = {
         let df = DateFormatter()
         df.dateFormat = "HH:mm:ss.SSS"

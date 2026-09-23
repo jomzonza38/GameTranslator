@@ -10,6 +10,18 @@ struct WelcomeView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
+            if !ScreenRecordingPermission.isGranted {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    Text("ยังไม่ได้อนุญาต Screen Recording — เปิดสวิตช์ GameTranslator ใน System Settings แล้วกด \"เปิดแอปใหม่\" ในเมนูของแอป")
+                        .font(.callout)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(10)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.orange.opacity(0.12)))
+            }
+
             HStack(spacing: 10) {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 26))
