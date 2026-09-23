@@ -6,7 +6,7 @@ import CoreGraphics
 enum ScreenRecordingPermission {
     /// Identifies the installed build (path + executable modification date).
     /// Each rebuild gets a new code signature, which macOS treats as a new app.
-    static var currentBuildKey: String {
+    nonisolated static var currentBuildKey: String {
         let executable = Bundle.main.executableURL
         let modified = (executable.flatMap {
             try? FileManager.default.attributesOfItem(atPath: $0.path)[.modificationDate] as? Date
