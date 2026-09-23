@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **Status** | READY |
+| **Status** | REVIEW |
 | **Type** | fix |
 | **Priority** | P2 |
 | **Version impact** | patch |
@@ -79,7 +79,80 @@ with OpenAI/Claude.
 
 ## Implementation Notes
 
+- **One rule for both providers:** `BatchFallback.shouldRetryPerLine(after:)` (new,
+  in `LLMChatProvider.swift`). **No per-line fallback** — the error is rethrown
+  (Req 1):
+  - `rateLimitExceeded`, `missingApiKey`, `quotaExceeded`, `unsupportedLanguage`
+  - `translationFailed` whose message starts with `HTTP 401`, `HTTP 403` or `HTTP 429`
+    (OpenAI, Claude and Google Free report HTTP errors as `"HTTP <status>…"`; no typed
+    auth error exists, and adding one would touch other providers and error texts)
+  - `CancellationError`, `Task.isCancelled` (a stop), `URLError.cancelled` — bare or
+    wrapped in `networkError`
+  - offline errors: `notConnectedToInternet`, `networkConnectionLost`,
+    `cannotFindHost`, `cannotConnectToHost`, `dnsLookupFailed`,
+    `userAuthenticationRequired`
+- **Req 3 decision — transient network errors:** *offline* errors are rethrown (every
+  per-line request would fail the same way; the pipeline retries after its 3 s
+  back-off). **Timeouts and other errors (e.g. HTTP 5xx, invalid response) still fall
+  back**: a large batch can time out or be rejected where single short lines succeed,
+  which is the case the fallback exists for.
+- **LLMChatProvider.translateBatch:** the `catch` now rethrows unless the rule allows
+  a retry. A reply that can't be parsed still falls through to `translateEach`
+  (Req 2, unchanged).
+- **GoogleFreeProvider.translateBatch:** restructured so only the batch request is
+  inside `do/catch`. Before, the parallel fallback for a split mismatch ran *inside*
+  the `do`, so if those per-line requests failed, the `catch` sent **all of them
+  again** — a second storm. Now: batch fails → rule decides (parallel or rethrow);
+  split mismatch → parallel once (Req 2).
+- **Testability:** `GoogleFreeProvider.init(configuration:)` takes an optional
+  `URLSessionConfiguration` (default `.default`, same timeouts and connection limit
+  applied as before), so tests can plug in a stub `URLProtocol`. The app still calls
+  `GoogleFreeProvider()`.
+- **Error texts unchanged (Req 4):** errors are rethrown as they are.
+
 ## Result
+
+**Outcome:** PASS — all criteria are `[test]`/`[code]`/`[build]` and pass
+**Version:** 1.11.17 → 1.11.18
+**Commit:** not committed (waiting for owner)
+
+### Acceptance criteria
+| AC | Result | Evidence |
+|---|---|---|
+| AC-1 | ✅ pass | `BatchFallbackTests.testLLMRateLimitIsRethrownWithoutPerLineRequests`: throws `rateLimitExceeded`, `complete` called once. |
+| AC-2 | ✅ pass | `testLLMMissingApiKeyIsRethrownWithoutPerLineRequests`, `testLLMCancellationIsRethrownWithoutPerLineRequests` (+ `testLLMHTTP401…`): each throws, `complete` called once. |
+| AC-3 | ✅ pass | `testLLMMissingNumberedLineFallsBackToPerLine`: reply lacks `[3]` → 3 translations, `complete` called 4× (1 batch + 3 per-line). |
+| AC-4 | ✅ pass | Same rule in `GoogleFreeProvider`; tested through a stub `URLProtocol` (no real network): 429 → rethrown after 1 request; 403 → 1 request; split mismatch → 4 requests, 3 results; HTTP 500 → still falls back (4 requests). |
+| AC-5 | ✅ pass | `Executed 74 tests, with 0 failures`, `** TEST SUCCEEDED **`, `** BUILD SUCCEEDED **`. |
+
+Also `testNoPerLineRetryForRefusalsCancelAndOffline` /
+`testPerLineRetryForTimeoutsServerErrorsAndBadReplies` pin down the rule itself.
+
+### Build & test
+```
+Executed 74 tests, with 0 failures (0 unexpected) in 0.529 (0.569) seconds
+** TEST SUCCEEDED **
+** BUILD SUCCEEDED **
+```
+
+### Changed files
+```
+ Resources/Info.plist                        |  2 +-
+ Sources/Providers/GoogleFreeProvider.swift  | 32 ++++++++++-------
+ Sources/Providers/LLMChatProvider.swift     | 46 ++++++++++++++++++++++++-
+ Tests/BatchFallbackTests.swift              | (new, 11 tests)
+ tasks/BOARD.md, tasks/T-0008-…md            | (status + this report)
+```
+
+### Manual checks for the owner
+None required by the spec. Optional: translate with OpenAI and an invalid key —
+`GameTranslator.log` should show one failed request per retry (every ~3 s), not one
+per on-screen line.
+
+### Proposed follow-ups
+- Providers report HTTP failures only as text (`"HTTP 401: …"`); a typed
+  `TranslationError.http(status:)` would make rules like this one less string-based.
+  Touches all providers and `TranslationProvider.swift` → separate task if wanted.
 
 ---
 
@@ -89,3 +162,5 @@ with OpenAI/Claude.
 | Date | Change | Who | Note |
 |---|---|---|---|
 | 2026-09-23 | → READY | Cowork | created from code audit v1.11.11 |
+| 2026-09-23 | READY → IN_PROGRESS | Claude Code | started |
+| 2026-09-23 | IN_PROGRESS → REVIEW | Claude Code | all ACs pass (no manual ACs) |

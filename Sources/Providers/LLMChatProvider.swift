@@ -38,8 +38,11 @@ extension LLMChatProvider {
             if let results = LLMPrompt.parseNumbered(reply, count: texts.count) {
                 return zip(results, texts).map { LLMPrompt.sanitize($0, source: $1) }
             }
+            // Reply couldn't be matched to the lines — translate them one by one
         } catch {
-            // Fall through to per-line requests, which surface the real error if it persists
+            // Rate limit, bad key, quota, cancel, no network: every per-line request
+            // would fail the same way, only N times over
+            guard BatchFallback.shouldRetryPerLine(after: error) else { throw error }
         }
         return try await translateEach(texts, context: context)
     }
@@ -66,6 +69,47 @@ extension LLMChatProvider {
                 results[index] = translation
             }
             return results
+        }
+    }
+}
+
+/// When a failed batch request may be retried as one request per line (used by
+/// LLMChatProvider and GoogleFreeProvider)
+enum BatchFallback {
+    /// True only when smaller requests can plausibly succeed. Not when the service
+    /// refused us (rate limit, API key, quota), the task was cancelled (stop) or the
+    /// network is down — then N parallel requests would all fail too, and against a
+    /// rate limit they make things worse (and cost money with LLMs).
+    /// Timeouts and other errors still fall back: a big batch can time out where
+    /// single lines succeed.
+    static func shouldRetryPerLine(after error: Error) -> Bool {
+        if Task.isCancelled || error is CancellationError { return false }
+        if let urlError = error as? URLError { return allowsRetry(urlError) }
+        guard let translationError = error as? TranslationError else { return true }
+
+        switch translationError {
+        case .rateLimitExceeded, .missingApiKey, .quotaExceeded, .unsupportedLanguage:
+            return false
+        case .networkError(let underlying):
+            if underlying is CancellationError { return false }
+            if let urlError = underlying as? URLError { return allowsRetry(urlError) }
+            return true
+        case .translationFailed(let message):
+            // Providers report HTTP errors as "HTTP <status>…": 401/403 = key refused or
+            // blocked, 429 = rate limited
+            return !["HTTP 401", "HTTP 403", "HTTP 429"].contains { message.hasPrefix($0) }
+        case .invalidResponse:
+            return true
+        }
+    }
+
+    private static func allowsRetry(_ error: URLError) -> Bool {
+        switch error.code {
+        case .cancelled, .notConnectedToInternet, .networkConnectionLost, .cannotFindHost,
+             .cannotConnectToHost, .dnsLookupFailed, .userAuthenticationRequired:
+            return false
+        default:
+            return true
         }
     }
 }

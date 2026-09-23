@@ -10,8 +10,9 @@ final class GoogleFreeProvider: TranslationProvider {
 
     private let session: URLSession
 
-    init() {
-        let config = URLSessionConfiguration.default
+    /// `configuration` is replaceable so tests can stub the network
+    init(configuration: URLSessionConfiguration = .default) {
+        let config = configuration
         config.timeoutIntervalForRequest = 10
         config.timeoutIntervalForResource = 30
         // Allow more concurrent connections for parallel fallback
@@ -102,7 +103,8 @@ final class GoogleFreeProvider: TranslationProvider {
     /// N parallel requests when there are many texts.
     ///
     /// Falls back to parallel individual requests if the batch result can't be split
-    /// reliably, or if the combined text is too long.
+    /// reliably, if the combined text is too long, or if the batch request failed in a
+    /// way single lines might not (see BatchFallback — not on rate limit or cancel).
     func translateBatch(_ texts: [String], from: String, to: String) async throws -> [String] {
         guard !texts.isEmpty else { return [] }
 
@@ -120,20 +122,24 @@ final class GoogleFreeProvider: TranslationProvider {
             return try await translateParallel(texts, from: from, to: to)
         }
 
+        let translated: String
         do {
-            let translated = try await translate(combined, from: from, to: to)
-            if let parts = Self.splitBatch(translated, count: texts.count) {
-                return parts
-            }
-
-            // Google merged or split lines — we can't tell which translation belongs
-            // to which text, so translate each one on its own
-            GameLog.log("Batch split mismatch (expected \(texts.count) lines), using parallel")
-            return try await translateParallel(texts, from: from, to: to)
+            translated = try await translate(combined, from: from, to: to)
         } catch {
-            // Batch failed — fall back to parallel
+            // Rate limit / blocked / cancelled: N parallel requests would only make it worse
+            guard BatchFallback.shouldRetryPerLine(after: error) else { throw error }
+            GameLog.log("Batch request failed (\(error.localizedDescription)), using parallel")
             return try await translateParallel(texts, from: from, to: to)
         }
+
+        if let parts = Self.splitBatch(translated, count: texts.count) {
+            return parts
+        }
+
+        // Google merged or split lines — we can't tell which translation belongs
+        // to which text, so translate each one on its own
+        GameLog.log("Batch split mismatch (expected \(texts.count) lines), using parallel")
+        return try await translateParallel(texts, from: from, to: to)
     }
 
     /// Split a newline-joined batch reply back into one translation per text.
