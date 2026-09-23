@@ -10,7 +10,7 @@ Lifecycle and who may set each status: `WORKFLOW.md` §3.
 
 | ID | Title | Status | Priority | Depends on | Next step by |
 |---|---|---|---|---|---|
-| [T-0002](T-0002-game-window-closed-while-capturing.md) | Closing the game while translating must stop cleanly and tell the user | READY | P1 | — | Claude Code |
+| [T-0002](T-0002-game-window-closed-while-capturing.md) | Closing the game while translating must stop cleanly and tell the user | REVIEW | P1 | — | Cowork (review) + owner (AC-4, AC-5 manual) |
 | [T-0003](T-0003-stop-during-start-leaves-orphan-stream.md) | Stopping while a session is starting must not leave capture running | READY | P1 | T-0001 ✅ | Claude Code |
 | [T-0004](T-0004-build-sh-must-fail-on-signing-error.md) | build.sh must stop loudly when code signing fails | READY | P1 | — | Claude Code |
 | [T-0005](T-0005-ocr-continuation-resumed-once.md) | OCR must never resume its continuation twice | READY | P2 | — | Claude Code |

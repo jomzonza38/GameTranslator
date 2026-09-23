@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **Status** | READY |
+| **Status** | REVIEW |
 | **Type** | fix |
 | **Priority** | P1 |
 | **Version impact** | patch |
@@ -102,7 +102,109 @@ thinks it is running. This is stability goal 2.
 
 ## Implementation Notes
 
+- **Two detectors, one report** (`ScreenCaptureService`):
+  1. The `SCStream` now gets the service as its `SCStreamDelegate`;
+     `stream(_:didStopWithError:)` logs the error and reports.
+  2. A **window watchdog** (`DispatchSourceTimer` on the capture queue, every 1 s)
+     checks with `CGWindowListCopyWindowInfo(.optionIncludingWindow, windowID)`
+     whether the captured window still exists. Two misses in a row
+     (`WindowGoneDetector`, threshold 2) → report `.windowClosed`. This covers the
+     amended cases: capture that *started* on an already-closed window, and a stream
+     that silently delivers nothing. `.optionIncludingWindow` also returns
+     minimised/off-screen windows, so a minimised game is not mistaken for closed
+     (that case stays out of scope as specified). A `nil` result from the API counts
+     as "exists" so an API glitch never stops a working session.
+  - For `didStopWithError`, the reason is `.windowClosed` if the window is gone,
+    otherwise `.streamFailed(error)` (different Thai message).
+- **At most once, never for our own stop (Req 5 / AC-2):** the service keeps an
+  `ActiveSession` (stream identity + window ID) under an `NSLock`.
+  `stopCapture()` clears it and cancels the watchdog *before* stopping the stream,
+  and a report only goes out if its session is still the active one — checked and
+  cleared in one locked step, so the watchdog and the delegate can't both report.
+  Callbacks from an old stream are ignored the same way.
+- **Coordinator:** the unused `didEncounterError` delegate method was replaced by
+  `didStopUnexpectedly(_:)`. `handleUnexpectedStop` (MainActor) does nothing if not
+  running, logs `✗ Game window closed — stopping translation` (or the stream error),
+  runs the same `tearDown()` as a user stop (from T-0001), sets `lastError` to the
+  Thai message and calls the new `onStoppedUnexpectedly` callback.
+- **How the user is told (Req 2):** the message goes into the menu's existing ⚠️
+  line — "หยุดแปลแล้ว เพราะหน้าต่างเกมถูกปิด" — and the status icon switches to
+  not-running. No `NSAlert` (modal, steals focus from a restarting game) and no
+  `UserNotifications` (would add a new macOS permission prompt). The message is
+  cleared by the next start (`start()` resets `lastError`).
+- **StatusBarController:** sets `onStoppedUnexpectedly` to clear the window title,
+  rebuild the menu and reset the icon — the same three steps as `stopTranslation()`.
+- **Detection delay:** 1–2 s after the window disappears (first check after 1 s,
+  second miss confirms).
+- **Tests:** `WindowGoneDetectorTests` (4 tests) cover the gone/not-gone decision.
+  The stream and watchdog wiring needs a real `SCStream`/window, so it is covered by
+  code review and AC-4/AC-5.
+- **Not done here (T-0003):** T-0001's review note — a late failure of an old
+  `start` tearing down a new session — and the stale `selectedWindow`/`streamOutput`
+  after a failed `startCapture` are left for T-0003, which owns the start/stop ordering.
+
 ## Result
+
+**Outcome:** PARTIAL — all `[code]`/`[build]` criteria pass; AC-4 and AC-5 pending owner
+**Version:** 1.11.12 → 1.11.13
+**Commit:** not committed (waiting for owner)
+
+### Acceptance criteria
+| AC | Result | Evidence |
+|---|---|---|
+| AC-1 | ✅ pass | `SCStream(..., delegate: self)` + `SCStreamDelegate.stream(_:didStopWithError:)` and the window watchdog both call `reportUnexpectedStop` → delegate `didStopUnexpectedly` → `PipelineCoordinator.handleUnexpectedStop` → `tearDown()` (same as `stop()`). |
+| AC-2 | ✅ pass | `stopCapture()` calls `endSession()` before `stream.stopCapture()`; reports require the session to still be active; `handleUnexpectedStop` also returns early when `!isRunning` (user stop sets it false first). |
+| AC-3 | ✅ pass | Added lines contain no `SCShareableContent`, `CGRequestScreenCaptureAccess`, `CGPreflightScreenCaptureAccess`, `runModal` or `activate(`. Only `CGWindowListCopyWindowInfo`, which the app already uses and which shows no dialog. |
+| AC-4 | ⏳ pending owner | Steps below. |
+| AC-5 | ⏳ pending owner | Steps below. |
+| AC-6 | ✅ pass | `Executed 56 tests, with 0 failures`, `** TEST SUCCEEDED **`, `** BUILD SUCCEEDED **`. |
+
+### Build & test
+```
+Executed 56 tests, with 0 failures (0 unexpected) in 0.075 (0.100) seconds
+** TEST SUCCEEDED **
+** BUILD SUCCEEDED **
+```
+
+### Changed files
+```
+ Resources/Info.plist                               |   2 +-
+ Sources/App/StatusBarController.swift              |   7 ++
+ Sources/Services/PipelineCoordinator.swift         |  29 +++++-
+ Sources/Services/ScreenCaptureService.swift        | 112 ++++++++++++++++++++-
+ Tests/WindowGoneDetectorTests.swift                |  (new, 4 tests)
+ tasks/BOARD.md, tasks/T-0002-…md                   |  (status + this report)
+```
+
+### Manual checks for the owner
+Install with `./build.sh` first.
+
+**AC-4 (Overlay, game quits while translating)**
+1. Settings → display mode Overlay. Open a game (TextEdit works for a quick check).
+2. ⌃⌥T → pick the game window; wait until translations show.
+3. Quit the game.
+Expected within ~2 s: overlay disappears; menu shows "🎮 เลือก Window..." and the
+line "⚠️ หยุดแปลแล้ว เพราะหน้าต่างเกมถูกปิด"; status icon is the outline (not
+filled) one; no crash or freeze. Log has `Captured window … no longer exists` (or
+`Capture stream stopped: …`) followed by `✗ Game window closed — stopping translation`.
+
+**AC-4b (window already closed when picked — from the T-0001 amendment)**
+1. ⌃⌥T to open the picker, quit the game while the picker is open, click its window.
+Expected: capture may start, but within ~2 s the same stop + message as above.
+
+**AC-5 (Panel mode, then restart the game)**
+1. Repeat AC-4 with display mode Panel → the panel disappears after the game quits.
+2. Start the game again, press ⌃⌥T → picker opens → pick it → translation works and
+   the ⚠️ message is gone from the menu.
+
+**Also check (Req 5):** start translating, then press ⌃⌥T (or menu ⏹ หยุดแปล) to stop
+normally → no "หน้าต่างเกมถูกปิด" message appears.
+
+### Proposed follow-ups
+- A minimised/hidden game keeps the session "running" with no frames (out of scope
+  here by spec). If that matters, it needs its own task (e.g. pause the overlay).
+- The ⚠️ message only lives in the menu; if the owner wants a visible toast over the
+  game, that would be a separate UX task (non-activating panel, no new permission).
 
 ---
 
@@ -112,3 +214,5 @@ thinks it is running. This is stability goal 2.
 | Date | Change | Who | Note |
 |---|---|---|---|
 | 2026-09-23 | → READY | Cowork | created from code audit v1.11.11 |
+| 2026-09-23 | READY → IN_PROGRESS | Claude Code | started |
+| 2026-09-23 | IN_PROGRESS → REVIEW | Claude Code | code/build ACs pass; AC-4, AC-5 manual pending owner |

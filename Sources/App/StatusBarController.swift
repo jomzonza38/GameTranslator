@@ -40,6 +40,13 @@ final class StatusBarController: NSObject, ObservableObject {
             self?.rebuildMenu()
         }
 
+        // Game window closed while translating — show "not running" and the message
+        pipeline.onStoppedUnexpectedly = { [weak self] in
+            self?.selectedWindowTitle = nil
+            self?.rebuildMenu()
+            self?.updateStatusIcon(running: false)
+        }
+
         rebuildMenu()
         registerHotKeys()
     }

@@ -44,6 +44,10 @@ final class PipelineCoordinator: ObservableObject {
     /// Callback when capture regions change (add/remove/clear)
     var onRegionsChanged: (() -> Void)?
 
+    /// Callback after capture ended on its own (game window closed) and the
+    /// session was torn down, so the menu and status icon can refresh
+    var onStoppedUnexpectedly: (() -> Void)?
+
     /// Recent lines and glossary sent to LLM providers
     private let contextBuilder = TranslationContextBuilder()
 
@@ -136,6 +140,27 @@ final class PipelineCoordinator: ObservableObject {
     func stop() async {
         guard isRunning else { return }
         await tearDown()
+    }
+
+    /// Capture ended without the user stopping it — clean up like a normal stop
+    /// and leave a Thai message in the menu. Uses no alert: the user is often busy
+    /// restarting the game, so nothing should block or steal focus.
+    private func handleUnexpectedStop(_ reason: CaptureStopReason) async {
+        guard isRunning else { return }
+
+        let message: String
+        switch reason {
+        case .windowClosed:
+            GameLog.log("✗ Game window closed — stopping translation")
+            message = "หยุดแปลแล้ว เพราะหน้าต่างเกมถูกปิด"
+        case .streamFailed(let error):
+            GameLog.log("✗ Capture stopped unexpectedly: \(error.localizedDescription) — stopping translation")
+            message = "หยุดแปลแล้ว เพราะการจับภาพหยุดทำงาน: \(error.localizedDescription)"
+        }
+
+        await tearDown()
+        lastError = message
+        onStoppedUnexpectedly?()
     }
 
     /// Return to the idle state: used by stop() and when start() fails part-way
@@ -633,9 +658,9 @@ extension PipelineCoordinator: ScreenCaptureDelegate {
         }
     }
 
-    nonisolated func screenCaptureService(_ service: ScreenCaptureService, didEncounterError error: Error) {
+    nonisolated func screenCaptureService(_ service: ScreenCaptureService, didStopUnexpectedly reason: CaptureStopReason) {
         Task { @MainActor in
-            lastError = error.localizedDescription
+            await handleUnexpectedStop(reason)
         }
     }
 }
