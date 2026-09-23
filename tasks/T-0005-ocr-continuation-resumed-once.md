@@ -95,7 +95,7 @@ single failed Vision request.
 
 **Outcome:** PARTIAL — all `[code]`/`[test]`/`[build]` criteria pass; AC-3 pending owner
 **Version:** 1.11.14 → 1.11.15
-**Commit:** not committed (waiting for owner)
+**Commit:** `878b62f`
 
 ### Acceptance criteria
 | AC | Result | Evidence |
