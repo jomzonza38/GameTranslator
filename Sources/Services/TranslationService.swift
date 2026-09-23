@@ -63,8 +63,9 @@ final class TranslationService: @unchecked Sendable {
         return translation
     }
 
-    /// Translate multiple texts, using cache where possible
-    func translateBatch(_ texts: [String]) async throws -> [String: String] {
+    /// Translate multiple texts, using cache where possible.
+    /// `context` is used by LLM providers (game title, previous lines, glossary).
+    func translateBatch(_ texts: [String], context: TranslationContext? = nil) async throws -> [String: String] {
         var results: [String: String] = [:]
         var uncachedTexts: [String] = []
 
@@ -87,7 +88,12 @@ final class TranslationService: @unchecked Sendable {
                 )
             }
 
-            let translations = try await provider.translateBatch(uncachedTexts, from: sourceLanguage, to: targetLanguage)
+            let translations = try await provider.translateBatch(
+                uncachedTexts,
+                from: sourceLanguage,
+                to: targetLanguage,
+                context: context ?? .basic(from: sourceLanguage)
+            )
 
             for (text, translation) in zip(uncachedTexts, translations) {
                 results[text] = translation

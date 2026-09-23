@@ -236,6 +236,56 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(displayMode.rawValue, forKey: "displayMode") }
     }
 
+    // MARK: - Game Profiles & Context
+
+    /// Send recent lines to LLM providers so names and tone stay consistent
+    @Published var useConversationContext: Bool {
+        didSet { defaults.set(useConversationContext, forKey: "useConversationContext") }
+    }
+
+    /// Key of the game currently (or most recently) captured — the app name
+    @Published var currentGameID: String {
+        didSet { defaults.set(currentGameID, forKey: "currentGameID") }
+    }
+
+    /// Per-game settings keyed by app name
+    @Published var gameProfiles: [String: GameProfile] {
+        didSet { saveGameProfiles() }
+    }
+
+    /// Profile of the current game (empty profile when no game has been captured yet)
+    var currentProfile: GameProfile {
+        get { gameProfiles[currentGameID] ?? GameProfile(title: currentGameID) }
+        set {
+            guard !currentGameID.isEmpty else { return }
+            gameProfiles[currentGameID] = newValue
+        }
+    }
+
+    /// Make `id` the current game, creating a profile for it if needed
+    func selectGame(id: String) {
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        if gameProfiles[trimmed] == nil {
+            gameProfiles[trimmed] = GameProfile(title: trimmed)
+        }
+        currentGameID = trimmed
+    }
+
+    private func saveGameProfiles() {
+        if let data = try? JSONEncoder().encode(gameProfiles) {
+            defaults.set(data, forKey: "gameProfiles_v1")
+        }
+    }
+
+    private static func loadGameProfiles(_ defaults: UserDefaults) -> [String: GameProfile] {
+        guard let data = defaults.data(forKey: "gameProfiles_v1"),
+              let profiles = try? JSONDecoder().decode([String: GameProfile].self, from: data) else {
+            return [:]
+        }
+        return profiles
+    }
+
     // MARK: - Capture Regions (multiple)
 
     @Published var captureRegions: [CaptureRegion] {
@@ -271,6 +321,10 @@ final class AppSettings: ObservableObject {
 
         let modeRaw = defaults.string(forKey: "displayMode") ?? DisplayMode.overlay.rawValue
         self.displayMode = DisplayMode(rawValue: modeRaw) ?? .overlay
+
+        self.useConversationContext = defaults.object(forKey: "useConversationContext") as? Bool ?? true
+        self.currentGameID = defaults.string(forKey: "currentGameID") ?? ""
+        self.gameProfiles = Self.loadGameProfiles(defaults)
 
         // Load capture regions
         self.captureRegions = []

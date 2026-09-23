@@ -12,6 +12,11 @@ struct SettingsWindow: View {
                     Label("การแปล", systemImage: "character.book.closed")
                 }
 
+            GameSettingsTab()
+                .tabItem {
+                    Label("เกม", systemImage: "gamecontroller")
+                }
+
             CaptureSettingsTab()
                 .tabItem {
                     Label("การจับภาพ", systemImage: "camera.viewfinder")

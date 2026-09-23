@@ -57,6 +57,10 @@ final class PipelineCoordinator: ObservableObject {
     /// Callback when capture regions change (add/remove/clear)
     var onRegionsChanged: (() -> Void)?
 
+    /// Recently translated lines (oldest first), sent to LLM providers as context
+    private var recentLines: [(original: String, translation: String)] = []
+    private let contextLineCount = 6
+
     // MARK: - Init
 
     init() {
@@ -84,6 +88,10 @@ final class PipelineCoordinator: ObservableObject {
         guard let scWindow = window as? SCWindow else {
             throw PipelineError.invalidWindow
         }
+
+        // Per-game profile (title, glossary) keyed by the game's app name
+        settings.selectGame(id: scWindow.owningApplication?.applicationName ?? scWindow.title ?? "Unknown")
+        recentLines.removeAll()
 
         selectedWindow = window
         isRunning = true
@@ -412,10 +420,16 @@ final class PipelineCoordinator: ObservableObject {
                 let label = regionName ?? "full-screen"
                 GameLog.log("Translating \(textStrings.count) texts via \(translationService.currentProviderName) [\(label)]...")
 
-                let translations = try await translationService.translateBatch(textStrings)
+                let translations = try await translationService.translateBatch(
+                    textStrings,
+                    context: makeTranslationContext()
+                )
 
-                for (text, translation) in translations {
+                // Iterate in on-screen order so the context reads naturally
+                for text in textStrings {
+                    guard let translation = translations[text] else { continue }
                     state.cachedTranslations[text] = translation
+                    rememberLine(original: text, translation: translation)
                     GameLog.log("\u{2713} \"\(text)\" \u{2192} \"\(translation)\"")
                 }
             }
@@ -451,6 +465,26 @@ final class PipelineCoordinator: ObservableObject {
         )
 
         return (regions, translateTime)
+    }
+
+    // MARK: - Translation Context
+
+    private func makeTranslationContext() -> TranslationContext {
+        let profile = settings.currentProfile
+        return TranslationContext(
+            sourceLanguageName: settings.sourceLanguage.englishName,
+            gameTitle: profile.title,
+            recentLines: settings.useConversationContext ? Array(recentLines.suffix(contextLineCount)) : [],
+            glossary: []
+        )
+    }
+
+    private func rememberLine(original: String, translation: String) {
+        if recentLines.last?.original == original { return }
+        recentLines.append((original: original, translation: translation))
+        if recentLines.count > contextLineCount * 2 {
+            recentLines.removeFirst(recentLines.count - contextLineCount * 2)
+        }
     }
 
     // MARK: - Region Building
