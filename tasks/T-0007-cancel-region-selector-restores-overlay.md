@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **Status** | READY |
+| **Status** | REVIEW |
 | **Type** | fix |
 | **Priority** | P2 |
 | **Version impact** | patch |
@@ -67,7 +67,69 @@ the user stops and restarts.
 
 ## Implementation Notes
 
+- **RegionSelectorWindow:** `show(over:color:onCancel:completion:)` gets an optional
+  `onCancel` closure (default `nil`, so the call shape stays compatible). Esc still
+  dismisses the selector first (cursor popped, window ordered out), then calls
+  `onCancel`. The completion path is untouched.
+- **PipelineCoordinator.addCaptureRegion:** passes `onCancel`, which calls the new
+  `showOverlayAfterRegionSelection(over:)`. The success path now calls the same helper;
+  the helper holds the exact condition and call that were inline before
+  (`displayMode == .overlay && isRunning` → `overlayController.show(over: windowFrame)`),
+  so success behaviour is unchanged (Req 2).
+- **Why the translations come back immediately:** `hideTemporarily()` only orders the
+  overlay window out and keeps its text boxes; `show(over:)` orders it front again,
+  and the next frame's `updateRegions` continues as normal (Req 1).
+- **Panel mode (Req 3):** the helper does nothing; the panel was never hidden.
+- **Stopped while the selector was open (Req 4):** `isRunning` is false → no overlay.
+  (If a *new* session was started meanwhile, its `start()` has already shown the
+  overlay, so showing it again is harmless.)
+- No region is added on cancel: only the completion handler calls `settings.addRegion`.
+
 ## Result
+
+**Outcome:** PARTIAL — all `[code]`/`[build]` criteria pass; AC-2 and AC-3 pending owner
+**Version:** 1.11.16 → 1.11.17
+**Commit:** not committed (waiting for owner)
+
+### Acceptance criteria
+| AC | Result | Evidence |
+|---|---|---|
+| AC-1 | ✅ pass | `RegionSelectorView.onCancel` → `dismiss()` + `onCancel?()`; coordinator's `onCancel` → `showOverlayAfterRegionSelection`, which shows the overlay only if `settings.displayMode == .overlay && isRunning`. |
+| AC-2 | ⏳ pending owner | Steps below. |
+| AC-3 | ⏳ pending owner | Steps below. |
+| AC-4 | ✅ pass | `Executed 63 tests, with 0 failures`, `** TEST SUCCEEDED **`, `** BUILD SUCCEEDED **`. |
+
+### Build & test
+```
+Executed 63 tests, with 0 failures (0 unexpected) in 0.347 (0.384) seconds
+** TEST SUCCEEDED **
+** BUILD SUCCEEDED **
+```
+
+### Changed files
+```
+ Resources/Info.plist                        |  2 +-
+ Sources/Overlay/RegionSelectorWindow.swift  |  9 ++++++++-
+ Sources/Services/PipelineCoordinator.swift  | 18 +++++++++++++-----
+ tasks/BOARD.md, tasks/T-0007-…md            | (status + this report)
+```
+
+### Manual checks for the owner
+After `./build.sh`:
+
+**AC-2 (Overlay):** translate a game in Overlay mode → menu → "➕ เพิ่มพื้นที่แปล..." →
+press Esc. Expected: the translations reappear at once (or within a second); the
+region count in the menu is unchanged. Then add a region normally (drag) → overlay
+comes back and the region is added, as before.
+
+**AC-3 (Panel):** same steps in Panel mode. Expected: the panel stays as it was; no
+overlay appears.
+
+**Optional (Req 4):** open the region selector, press ⌃⌥T to stop, then Esc.
+Expected: no overlay appears.
+
+### Proposed follow-ups
+- none
 
 ---
 
@@ -77,3 +139,5 @@ the user stops and restarts.
 | Date | Change | Who | Note |
 |---|---|---|---|
 | 2026-09-23 | → READY | Cowork | created from code audit v1.11.11 |
+| 2026-09-23 | READY → IN_PROGRESS | Claude Code | started |
+| 2026-09-23 | IN_PROGRESS → REVIEW | Claude Code | code/build ACs pass; AC-2, AC-3 manual pending owner |

@@ -229,7 +229,10 @@ final class PipelineCoordinator: ObservableObject {
         // Temporarily hide overlay so it doesn't interfere with region selection
         overlayController.hideTemporarily()
 
-        regionSelector.show(over: windowFrame, color: color) { [weak self] normalizedRect in
+        regionSelector.show(over: windowFrame, color: color, onCancel: { [weak self] in
+            // Esc — no region added; bring the hidden overlay back
+            self?.showOverlayAfterRegionSelection(over: windowFrame)
+        }) { [weak self] normalizedRect in
             guard let self = self else { return }
             Task { @MainActor in
                 let region = CaptureRegion(name: name, rect: normalizedRect, color: color)
@@ -238,13 +241,18 @@ final class PipelineCoordinator: ObservableObject {
 
                 GameLog.log("Region added: \(name) (\(color.rawValue)) x=\(String(format: "%.2f", normalizedRect.origin.x)) y=\(String(format: "%.2f", normalizedRect.origin.y)) w=\(String(format: "%.2f", normalizedRect.width)) h=\(String(format: "%.2f", normalizedRect.height))")
 
-                // Re-show overlay if in overlay mode
-                if self.settings.displayMode == .overlay, self.isRunning {
-                    self.overlayController.show(over: windowFrame)
-                }
+                self.showOverlayAfterRegionSelection(over: windowFrame)
 
                 self.onRegionsChanged?()
             }
+        }
+    }
+
+    /// Re-show the overlay hidden for region selection — only while running in
+    /// Overlay mode (not after a stop, and Panel mode has no overlay)
+    private func showOverlayAfterRegionSelection(over windowFrame: CGRect) {
+        if settings.displayMode == .overlay, isRunning {
+            overlayController.show(over: windowFrame)
         }
     }
 

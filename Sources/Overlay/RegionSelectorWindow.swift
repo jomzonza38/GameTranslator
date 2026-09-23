@@ -15,7 +15,13 @@ final class RegionSelectorWindow {
     /// Show the selector over the game window.
     /// `gameFrame` is in CG screen coordinates (top-left origin).
     /// `color` controls the selection border color for this region.
-    func show(over gameFrame: CGRect, color: RegionColor = .blue, completion: @escaping RegionSelectionHandler) {
+    /// `onCancel` runs when the user presses Esc (no region is selected).
+    func show(
+        over gameFrame: CGRect,
+        color: RegionColor = .blue,
+        onCancel: (() -> Void)? = nil,
+        completion: @escaping RegionSelectionHandler
+    ) {
         // Convert CG (top-left) to NS (bottom-left)
         guard let mainScreen = NSScreen.main else { return }
         let screenHeight = mainScreen.frame.height
@@ -49,6 +55,7 @@ final class RegionSelectorWindow {
         }
         view.onCancel = { [weak self] in
             self?.dismiss()
+            onCancel?()
         }
 
         win.contentView = view

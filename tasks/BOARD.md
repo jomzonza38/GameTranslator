@@ -15,7 +15,7 @@ Lifecycle and who may set each status: `WORKFLOW.md` §3.
 | [T-0004](T-0004-build-sh-must-fail-on-signing-error.md) | build.sh must stop loudly when code signing fails | REVIEW (committed `7a9618f`) | P1 | — | Cowork (review) + owner (AC-4, AC-5 manual) |
 | [T-0005](T-0005-ocr-continuation-resumed-once.md) | OCR must never resume its continuation twice | REVIEW (committed `878b62f`) | P2 | — | Cowork (review) + owner (AC-3 manual) |
 | [T-0006](T-0006-menu-shows-live-errors-and-status.md) | The menu must show the current error, status and stats | REVIEW (committed `0c8273a`) | P2 | — | Cowork (review) + owner (AC-3 manual) |
-| [T-0007](T-0007-cancel-region-selector-restores-overlay.md) | Cancelling region selection must bring the overlay back | READY | P2 | — | Claude Code |
+| [T-0007](T-0007-cancel-region-selector-restores-overlay.md) | Cancelling region selection must bring the overlay back | REVIEW | P2 | — | Cowork (review) + owner (AC-2, AC-3 manual) |
 | [T-0008](T-0008-batch-fallback-no-request-storm.md) | A failed batch request must not turn into a storm of per-line requests | READY | P2 | — | Claude Code |
 | [T-0009](T-0009-multi-monitor-coordinates.md) | Overlay, panel and region selector placed correctly on multi-monitor setups | READY | P3 | — | Claude Code |
 
