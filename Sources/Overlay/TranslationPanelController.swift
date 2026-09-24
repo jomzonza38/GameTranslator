@@ -8,13 +8,25 @@ import Combine
 @MainActor
 final class TranslationPanelData: ObservableObject {
     struct Entry: Identifiable {
-        let id = UUID()
+        /// Stable across updates — region + source text + occurrence — so the hovered
+        /// entry survives the per-frame refresh (T-0019)
+        let id: String
         let original: String
         let translated: String
         let regionColor: RegionColor?
         let regionName: String?
         /// Picture of the original text (full-screen mode only)
         let thumbnail: CGImage?
+        /// Where the original text is on screen (CG screen coordinates)
+        let sourceRect: CGRect
+    }
+
+    /// Outline to draw around the hovered entry's source text
+    struct SourceHighlight: Equatable {
+        /// CG screen coordinates
+        let rect: CGRect
+        /// Region colour; nil in full-screen mode
+        let regionColor: RegionColor?
     }
 
     @Published var entries: [Entry] = []
@@ -22,22 +34,58 @@ final class TranslationPanelData: ObservableObject {
     /// First OCR of this launch is waiting for Vision to prepare its model
     @Published var isPreparingOCR = false
 
+    /// Entry the mouse is over (by `Entry.id`)
+    @Published private(set) var hoveredID: String?
+    /// Outline for the hovered entry's source text (nil = nothing to outline)
+    @Published private(set) var highlight: SourceHighlight?
+
     func update(from regions: [TranslatedRegion]) {
         // Sort by vertical position (top to bottom) for natural reading order
         let sorted = regions.sorted { $0.screenRect.minY < $1.screenRect.minY }
+        var occurrences: [String: Int] = [:]
         entries = sorted.map {
-            Entry(
+            let base = "\($0.regionID?.uuidString ?? "full")|\($0.originalText)"
+            let occurrence = occurrences[base, default: 0]
+            occurrences[base] = occurrence + 1
+            return Entry(
+                id: "\(base)#\(occurrence)",
                 original: $0.originalText,
                 translated: $0.translatedText,
                 regionColor: $0.regionColor,
                 regionName: $0.regionName,
-                thumbnail: $0.sourceThumbnail
+                thumbnail: $0.sourceThumbnail,
+                sourceRect: $0.sourceRect
             )
         }
+        // Hovered text gone from the screen: drop the hover; otherwise follow it
+        if let hoveredID, !entries.contains(where: { $0.id == hoveredID }) {
+            self.hoveredID = nil
+        }
+        refreshHighlight()
+    }
+
+    /// Mouse entered or left an entry's row
+    func setHovered(_ id: String, isInside: Bool) {
+        if isInside {
+            hoveredID = id
+        } else if hoveredID == id {
+            hoveredID = nil
+        }
+        refreshHighlight()
     }
 
     func clear() {
         entries = []
+        hoveredID = nil
+        refreshHighlight()
+    }
+
+    private func refreshHighlight() {
+        let entry = entries.first { $0.id == hoveredID }
+        let newHighlight = entry.map { SourceHighlight(rect: $0.sourceRect, regionColor: $0.regionColor) }
+        if newHighlight != highlight {
+            highlight = newHighlight
+        }
     }
 }
 
@@ -359,8 +407,12 @@ struct TranslationPanelContent: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 4)
-                .fill(Color.white.opacity(0.03))
+                .fill(Color.white.opacity(data.hoveredID == entry.id ? 0.10 : 0.03))
         )
+        // Pointing at an entry outlines its text in the game (T-0019)
+        .onHover { isInside in
+            data.setHovered(entry.id, isInside: isInside)
+        }
     }
 }
 
@@ -372,6 +424,9 @@ final class TranslationPanelController: NSObject, NSWindowDelegate {
     private var panelWindow: NSWindow?
     private let panelData = TranslationPanelData()
     private var cancellables = Set<AnyCancellable>()
+    /// Click-through outline around the hovered entry's source text (T-0019)
+    private let sourceHighlight = SourceHighlightWindow()
+    private var highlightSubscription: AnyCancellable?
 
     /// Expanded panel size
     private let expandedWidth: CGFloat = 320
@@ -400,6 +455,23 @@ final class TranslationPanelController: NSObject, NSWindowDelegate {
 
         panel.orderFrontRegardless()
 
+        // Draw / move / remove the outline as the hovered entry changes
+        if highlightSubscription == nil {
+            highlightSubscription = panelData.$highlight
+                .removeDuplicates()
+                .sink { [weak self] highlight in
+                    guard let self else { return }
+                    if let highlight {
+                        self.sourceHighlight.show(
+                            around: highlight.rect,
+                            color: highlight.regionColor?.nsColor ?? .systemYellow
+                        )
+                    } else {
+                        self.sourceHighlight.hide()
+                    }
+                }
+        }
+
         // Observe collapsed state to resize the window
         panelData.$isCollapsed
             .removeDuplicates()
@@ -413,6 +485,8 @@ final class TranslationPanelController: NSObject, NSWindowDelegate {
         cancellables.removeAll()
         panelWindow?.orderOut(nil)
         panelData.clear()
+        // Stop, game closed, Overlay mode: never leave an outline behind
+        sourceHighlight.hide()
     }
 
     // MARK: - Update

@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **Status** | READY |
+| **Status** | REVIEW |
 | **Type** | feature |
 | **Priority** | P2 |
 | **Version impact** | minor |
@@ -82,7 +82,87 @@ over a panel entry should outline that entry's source text on the game screen.
 
 ## Implementation Notes
 
+- **Where the text is:** new `TranslatedRegion.sourceRect` — the text's on-screen box
+  when the region is built (CG screen coordinates, from the live window frame). The
+  copy helpers keep it, so it is **not** moved when `resolveOverlaps` pushes
+  overlapping boxes down (`withScreenRect`). The outline therefore surrounds the real
+  text, not the shifted translation box.
+- **Stable entries (hint):** `TranslationPanelData.Entry.id` is now
+  `"<region id or full>|<source text>#<occurrence>"` instead of a new `UUID` per
+  update. The same text in two places gets `#0` / `#1`, so SwiftUI ids stay unique.
+- **Hover state (pure, unit-tested) in `TranslationPanelData`:**
+  - `setHovered(id, isInside:)` is called from each row's `.onHover`.
+  - `hoveredID` plus a published `highlight` (`rect` = entry's `sourceRect`,
+    `regionColor`).
+  - On every `update(from:)`, the highlight follows the hovered text's new rect
+    (Req 5: moves with it). If the text is no longer on screen, the hover is dropped
+    and the highlight becomes nil (Req 5: never an empty spot). `clear()` drops both.
+  - The hovered row also gets a slightly brighter background.
+- **Drawing (Req 1, 3):** new `SourceHighlightWindow` (in `OverlayWindowController.swift`),
+  a separate small borderless window. The existing overlay window is hidden in Panel
+  mode, so it can't host the outline.
+  - `ignoresMouseEvents = true`, so clicks go to the game (AC-3).
+  - Level just above `.floating`, so it's above the game and the overlay.
+  - A rounded 3 pt stroke, not filled, with a dark halo so it shows on bright and dark
+    screens. Colour: the region's colour in region mode (Req 4), yellow in full-screen
+    mode.
+  - Positioned with `ScreenCoordinates.appKitRect(fromCG:)` (T-0009), so it is correct
+    on any display. 4 pt padding.
+- **Wiring:** `TranslationPanelController` subscribes once to `panelData.$highlight`
+  and shows, moves or hides the window. Its subscription is separate from the one
+  `hide()` clears.
+- **Going away (Req 2):**
+  - Mouse leaves the row → cleared immediately (well within ~1 s).
+  - Stop, game closed (T-0002 teardown), switch to Overlay mode, panel closed →
+    `panelController.hide()` → `panelData.clear()` plus an explicit
+    `sourceHighlight.hide()`.
+
 ## Result
+
+**Outcome:** PARTIAL — `[test]`/`[code]`/`[build]` criteria pass; AC-4 … AC-6 pending owner
+**Version:** 1.11.28 → 1.11.29
+**Commit:** not committed (owner asked for T-0018 and T-0019 first, review after)
+
+### Acceptance criteria
+| AC | Result | Evidence |
+|---|---|---|
+| AC-1 | ✅ pass | `PanelHoverTests`: `testHoveredEntryMapsToItsSourceRect`, `testHoverSurvivesAnUpdateWithUnchangedText` (new region objects, moved text → outline follows), `testOutlineUsesSourceRectNotThePushedDisplayRect`, `testRegionModeOutlineUsesTheRegionColour`, `testSameTextTwiceGetsDistinctEntries`. |
+| AC-2 | ✅ pass | `testOutlineClearedWhenTheTextIsGone`, `testOutlineClearedWhenThePipelineStops` (`clear()`, called by `hide()` on stop / game closed), `testOutlineClearedWhenTheMouseLeaves`. |
+| AC-3 | ✅ pass | `SourceHighlightWindow.makeWindow`: `window.ignoresMouseEvents = true`. |
+| AC-4…AC-6 | ⏳ pending owner | Steps below. |
+| AC-7 | ✅ pass | `Executed 132 tests, with 0 failures`, `** TEST SUCCEEDED **`, `** BUILD SUCCEEDED **`. |
+
+### Build & test
+```
+Executed 132 tests, with 0 failures (0 unexpected)
+** TEST SUCCEEDED **
+** BUILD SUCCEEDED **
+```
+
+### Changed files (this task only, on top of T-0018)
+```
+ Resources/Info.plist                              | 1.11.29
+ Sources/Models/TranslatedRegion.swift             | sourceRect
+ Sources/Overlay/TranslationPanelController.swift  | stable Entry.id, hover/highlight state, onHover, wiring
+ Sources/Overlay/OverlayWindowController.swift     | SourceHighlightWindow
+ Tests/PanelHoverTests.swift                       | (new, 8 tests)
+```
+
+### Manual checks for the owner
+After `./build.sh`:
+- **AC-4:** full-screen Panel mode, 2+ texts on screen → move the mouse over each
+  panel entry → a yellow rounded outline appears around that text in the game and
+  goes away when the mouse leaves the entry.
+- **AC-5:** hover an entry, press ⌃⌥T → outline disappears, no crash or freeze.
+  Separately: hover an entry and quit the game → outline disappears (with the
+  "game window closed" message).
+- **AC-6:** regions defined, Panel mode → hover an entry → outline (region colour)
+  around the right text inside the region; click in the game where the outline is →
+  the click reaches the game.
+- Optional: a second display — the outline sits on the text there too.
+
+### Proposed follow-ups
+- none
 
 ---
 
@@ -92,3 +172,5 @@ over a panel entry should outline that entry's source text on the game screen.
 | Date | Change | Who | Note |
 |---|---|---|---|
 | 2026-09-24 | → READY | Cowork | follows T-0018 |
+| 2026-09-24 | READY → IN_PROGRESS | Claude Code | started (stacked on T-0018, uncommitted) |
+| 2026-09-24 | IN_PROGRESS → REVIEW | Claude Code | test/code/build ACs pass; AC-4…AC-6 manual pending owner |

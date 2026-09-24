@@ -95,3 +95,65 @@ final class OverlayWindowController {
         ScreenCoordinates.appKitRect(fromCG: cgRect)
     }
 }
+
+// MARK: - Source highlight (T-0019)
+
+/// A click-through outline around the source text of the panel entry under the mouse
+@MainActor
+final class SourceHighlightWindow {
+    private var window: NSWindow?
+    private let outline = CAShapeLayer()
+    /// Space between the text and the outline
+    private let padding: CGFloat = 4
+
+    /// `cgRect` in CG screen coordinates (as TranslatedRegion.sourceRect)
+    func show(around cgRect: CGRect, color: NSColor) {
+        let window = self.window ?? makeWindow()
+        let frame = ScreenCoordinates.appKitRect(fromCG: cgRect).insetBy(dx: -padding, dy: -padding)
+        window.setFrame(frame, display: false)
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        outline.frame = CGRect(origin: .zero, size: frame.size)
+        outline.path = CGPath(
+            roundedRect: outline.bounds.insetBy(dx: 2, dy: 2),
+            cornerWidth: 6, cornerHeight: 6, transform: nil
+        )
+        outline.strokeColor = color.cgColor
+        CATransaction.commit()
+
+        window.orderFrontRegardless()
+    }
+
+    func hide() {
+        window?.orderOut(nil)
+    }
+
+    private func makeWindow() -> NSWindow {
+        let window = NSWindow(contentRect: .zero, styleMask: .borderless, backing: .buffered, defer: false)
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.hasShadow = false
+        // Never takes clicks — they go to the game underneath
+        window.ignoresMouseEvents = true
+        window.level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 1)
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        window.hidesOnDeactivate = false
+
+        let view = NSView(frame: .zero)
+        view.wantsLayer = true
+        outline.fillColor = nil
+        outline.lineWidth = 3
+        // Dark halo so the outline shows on bright and dark game screens
+        outline.shadowColor = NSColor.black.cgColor
+        outline.shadowOpacity = 0.8
+        outline.shadowRadius = 2
+        outline.shadowOffset = .zero
+        view.layer?.addSublayer(outline)
+        window.contentView = view
+
+        self.window = window
+        return window
+    }
+}
+

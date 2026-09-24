@@ -10,6 +10,9 @@ struct TranslatedRegion: Identifiable {
     let translatedText: String
     /// Bounding box in screen coordinates (pixels)
     let screenRect: CGRect
+    /// Where the original text is on screen (CG screen coordinates). Unlike
+    /// `screenRect`, not moved when overlapping boxes are pushed apart (T-0019).
+    let sourceRect: CGRect
     /// Font size estimated from the original text size
     let fontSize: CGFloat
     /// Whether this translation is still being processed
@@ -34,12 +37,14 @@ struct TranslatedRegion: Identifiable {
         regionColor: RegionColor? = nil,
         regionName: String? = nil,
         regionID: UUID? = nil,
-        sourceThumbnail: CGImage? = nil
+        sourceThumbnail: CGImage? = nil,
+        sourceRect: CGRect? = nil
     ) {
         self.id = UUID()
         self.originalText = originalText
         self.translatedText = translatedText
         self.screenRect = screenRect
+        self.sourceRect = sourceRect ?? screenRect
         self.fontSize = fontSize
         self.isPending = isPending
         self.lastUpdated = Date()
@@ -60,7 +65,8 @@ struct TranslatedRegion: Identifiable {
             regionColor: regionColor,
             regionName: regionName,
             regionID: regionID,
-            sourceThumbnail: sourceThumbnail
+            sourceThumbnail: sourceThumbnail,
+            sourceRect: sourceRect
         )
     }
 
@@ -75,7 +81,8 @@ struct TranslatedRegion: Identifiable {
             regionColor: regionColor,
             regionName: regionName,
             regionID: regionID,
-            sourceThumbnail: sourceThumbnail
+            sourceThumbnail: sourceThumbnail,
+            sourceRect: sourceRect
         )
     }
 
@@ -90,7 +97,8 @@ struct TranslatedRegion: Identifiable {
             regionColor: regionColor,
             regionName: regionName,
             regionID: regionID,
-            sourceThumbnail: thumbnail
+            sourceThumbnail: thumbnail,
+            sourceRect: sourceRect
         )
     }
 }

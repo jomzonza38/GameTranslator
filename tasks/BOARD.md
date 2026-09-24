@@ -11,7 +11,7 @@ Lifecycle and who may set each status: `WORKFLOW.md` §3.
 | ID | Title | Status | Priority | Depends on | Next step by |
 |---|---|---|---|---|---|
 | [T-0018](T-0018-panel-shows-source-thumbnail.md) | In full-screen mode, each panel entry shows where its text came from | REVIEW | P2 | — | Cowork (review) + owner (AC-4…AC-7 manual) |
-| [T-0019](T-0019-hover-panel-entry-highlights-source.md) | Pointing at a panel entry highlights its text in the game | READY | P2 | T-0018 | Claude Code |
+| [T-0019](T-0019-hover-panel-entry-highlights-source.md) | Pointing at a panel entry highlights its text in the game | REVIEW | P2 | T-0018 (in REVIEW) | Cowork (review) + owner (AC-4…AC-6 manual) |
 
 ## Closed
 
