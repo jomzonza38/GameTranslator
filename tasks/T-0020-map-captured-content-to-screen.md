@@ -144,6 +144,8 @@ y ≈ 370–397 pt. So outline ≈ **(−14, +99) + 0.878 × true position** —
    - `Window frame (CGWindowList): …`
    - `Capture resized to follow the window: A → B`
 
+**Round 1 commit:** `6730abe` (v1.11.30).
+
 **Still open — AC-1 needs the owner's log.** I can't run the capture here: a build
 other than the installed one would ask for Screen Recording (stability rule 1). Needed
 from the owner's scene (full-screen Graveyard Keeper, stone cutter menu), after
@@ -161,9 +163,79 @@ outline now surrounds the text.
 
 ## Review
 
+**Cowork, 2026-09-24 — owner test of round 1 (v1.11.30): still off, but the log pins the cause.**
+
+Result: the outline is now the right **width and x** (hovered "A polished brick of stone":
+text x≈520–965 px, outline x≈514–973 px incl. padding), but it sits **one row too low**
+(text y≈578–620 px, outline y≈637–687 px; screenshot 2000×1294 px of a 1920 pt-wide screen,
+≈1.042 px/pt). Thumbnails are still right.
+
+Owner's log:
+```
+[12:01:21.477] Capture geometry at start: SCWindow.frame=(0,38 1920x1115) live bounds=(0,38 1920x1115) output=3840x2230
+[12:01:21.669] Capture frame geometry: buffer=3840x2230 contentRect=(0,0 1920x1115) contentScale=1.000 scaleFactor=2.0 → window content in buffer=(0,0 3840x2230)
+[12:01:21.670] Window frame (CGWindowList): (0,38 1920x1115)
+[12:01:24.020] Capture frame geometry: buffer=3840x2230 contentRect=(0,0 1777x1115) contentScale=0.925 scaleFactor=2.0 → window content in buffer=(0,0 3554x2230)
+[12:01:24.043] Window frame (CGWindowList): (0,38 1920x1205)
+[12:01:24.099] Capture resized to follow the window: 3840x2230 → 3840x2410
+[12:01:24.157] Capture frame geometry: buffer=3840x2410 contentRect=(0,0 1920x1205) contentScale=1.000 scaleFactor=2.0 → window content in buffer=(0,0 3840x2410)
+[12:01:24.633] Capture frame geometry: buffer=3840x2410 contentRect=(0,0 1743x1205) contentScale=0.908 scaleFactor=2.0 → window content in buffer=(0,0 3487x2410)
+```
+
+**Reading (Cowork):**
+- `contentRect` is in points of the output, `× scaleFactor` = buffer pixels (1920×1205 → 3840×2410). ✔
+- In steady state `contentScale = 0.908` with `contentRect = 1743×1205`: ScreenCaptureKit is
+  scaling a source of **1743/0.908 × 1205/0.908 ≈ 1920 × 1327 pt** into the buffer. So SCK's
+  window is **~122 pt taller than CGWindowList's 1920×1205** (the game is full-screen; the
+  extra part is most likely the hidden title-bar area above the visible screen).
+- Model: SCK window = same left/bottom as the CG bounds, 122 pt taller, i.e. top at y ≈ −84.
+  Mapping `box × (0,38 1920×1205)` instead of `box × (0,−84 1920×1327)` predicts the outline
+  for "A polished brick of stone" at y ≈ 644–682 px — **observed 641–683 px**. x is unchanged
+  (width 1920 in both), which is also what was observed. This explains round 1's result exactly.
+- The round-1 resize targets the CG size (2410 px tall), so SCK keeps shrinking the 1327 pt
+  window by 0.908 — also ~9 % less OCR resolution than intended.
+
+**Round 2 (Claude Code decides the HOW; these are the observed facts to satisfy):**
+1. Map boxes with the **captured window's** rect, not the CG bounds: size = `contentRect.size /
+   contentScale` (points), placed on screen so its left/bottom match the CG bounds (confirm
+   with the next log; if SCK exposes the window's real frame, prefer that).
+2. Size the stream from that captured size (×2), so `contentScale` returns to 1.0 — and make
+   sure this can't loop between two sizes.
+3. Keep the sanity check from the interim review for the crop.
+4. Log the captured-window rect used for mapping, next to the CG bounds.
+5. Watch out: part of the captured window may be **off-screen** (y < 0). Outlines/overlay boxes
+   there should be skipped or clamped to the visible screen.
+
+**Cowork, 2026-09-24 — interim review of round 1 (`6730abe`, v1.11.30). Task stays IN_PROGRESS.**
+
+Approach accepted: measure first, and the two likely causes (stream size frozen at start;
+`SCStreamFrameInfo` ignored) are fixed behind one tested mapping. The resize path uses
+`updateConfiguration` only, so no permission risk (rule 1), and a failed resize is logged, not fatal.
+
+To address in round 2 (with the owner's log):
+1. **The crop heuristic can make things worse silently.** `contentPixelRect` takes the
+   *largest candidate that fits*. If `scaleFactor` is missing (→ 1) while `contentRect` is in
+   points, the as-is candidate (e.g. 1470×956 in a 2940×1912 buffer) fits and wins, and every
+   frame is cropped to the top-left quarter — OCR would lose ¾ of the screen. Only crop when the
+   chosen rect is consistent with the window (aspect ratio within ~2 %, and size ≈ window × 2 or
+   a plausible scaled-down fit); otherwise use the whole buffer and log it. Add a test for
+   "contentRect in points, scaleFactor nil".
+2. Once the log shows which units `contentRect` uses on this Mac, replace the candidate search
+   with that one rule (keep the sanity check).
+3. The round-1 arithmetic (≈ 0.878× in both axes + offset) points at a size mismatch between the
+   buffer and the frame used for mapping; the start/resize lines in the log should confirm it.
+   Record the confirmed cause under AC-1.
+
+Owner: after `./build.sh`, open the stone cutter menu in full-screen Graveyard Keeper, start
+translating (Panel mode, no regions), hover "A piece of stone", then run
+`grep -E "Capture geometry|Capture frame geometry|Window frame|Capture resized" ~/Desktop/GameTranslator.log`
+and send the output + a screenshot.
+
 ## Status history
 | Date | Change | Who | Note |
 |---|---|---|---|
 | 2026-09-24 | → READY | Cowork | corrects T-0019 (AC-4 failed on owner's screenshot) |
 | 2026-09-24 | READY → IN_PROGRESS | Claude Code | started |
 | 2026-09-24 | (IN_PROGRESS) | Claude Code | round 1 done (capture follows window size, crop to content rect, diagnostics, AC-2 tests pass); waiting for the owner's geometry log for AC-1 |
+| 2026-09-24 | — | Cowork | interim review of round 1; waiting for owner's geometry log |
+| 2026-09-24 | — | Cowork | round 1 tested by owner: y still off; cause identified from log (SCK window 122 pt taller than CG bounds) |
