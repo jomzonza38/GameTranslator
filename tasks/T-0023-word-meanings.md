@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **Status** | PLANNED |
+| **Status** | REVIEW |
 | **Type** | feature |
 | **Priority** | P2 |
 | **Version impact** | minor |
@@ -100,7 +100,90 @@ Learning window lists words and sentences; this task fills in a Thai meaning for
 
 ## Implementation Notes
 
+- **Started while PLANNED** on the owner's instruction; builds on T-0022 (in REVIEW,
+  uncommitted, stacked).
+- **`Sources/Services/MeaningService.swift`** (new):
+  - `MeaningSource.choose` (pure, AC-2): the chat setting's LLM with a key (T-0025
+    passes it in) → the selected translation provider if it is Claude/OpenAI with a key
+    → any LLM with a key (Claude first) → Google Free.
+  - `MeaningPrompt` (pure, AC-1). System prompt: game title + source language, "Thai
+    meaning as used in the example line", strict one-line format
+    `[N] part of speech | Thai meaning | short Thai note`. The user message lists
+    `[N] word — example: "…"`. `parse` accepts only in-range numbered lines with a
+    separator and a Thai meaning that isn't chatter (reuses `LLMPrompt.looksLikeChatter`).
+    Everything else is skipped, so a word gets **no** meaning rather than a wrong one
+    (Req 7). It never throws.
+  - `MeaningService` (`@MainActor`, dependencies injectable for tests: key lookup, LLM
+    factory, Google provider):
+    - `lookUp(wordIDs:…)`: up to 20 words without a meaning, **one request**; saved into
+      the T-0022 store with `meaningSource` "ai"/"google" and the part of speech the AI
+      gives.
+    - `explain(sentenceID:…)`: one AI request, saved as `explanation`.
+    - One job at a time (`isWorking`), cancellable (`หยุด`), and a failure sets a Thai
+      message and is **not retried** (Req 6).
+    - It uses `LLMChatProvider.complete` / `GoogleFreeProvider.translateBatch` directly —
+      not `TranslationService` — so the translation cache is untouched.
+- **Keys:** read through `AppSettings.loadApiKeyIfNeeded` only when a lookup or
+  explanation actually runs (button, or opening a word without a meaning). Nothing at
+  launch; `MeaningService.shared` is created when the Learning window is shown.
+- **Store fields** (T-0022 model, all optional so older files still load):
+  `LearningWord.meaning / meaningSource / meaningNote`, `LearningSentence.explanation`.
+  Saved with the item; a second lookup of a word with a meaning sends nothing (Req 5).
+- **Learning window:**
+  - Word rows: "ความหมาย: …" with an **AI** / **Google** badge.
+  - Footer (คำศัพท์ tab): **หาความหมาย (N)** for the shown words without a meaning (≤ 20
+    per press), progress + **หยุด**, the Thai error, or the note "ความหมายจาก Google (ไม่มีบริบท)
+    — ใส่ API key ของ Claude/OpenAI จะได้ความหมายตามเกม" (Req 3).
+  - Selecting a row opens a detail pane on the right:
+    - word: meaning, note, source note, **หาความหมายใหม่**, examples; auto-lookup if it has no
+      meaning (Req 2).
+    - sentence: original, Thai, **อธิบายประโยคนี้** / **อธิบายใหม่**; without an AI key the button
+      shows "ต้องมี API key ของ Claude หรือ OpenAI…" (Req 4).
+- `PipelineCoordinator` has no meaning/explain call (AC-4: only the T-0022 `add`).
+
 ## Result
+
+**Outcome:** PARTIAL — `[test]`/`[code]`/`[build]` criteria pass; AC-5 … AC-7 pending owner
+**Version:** 1.12.0 → 1.13.0
+**Commit:** not committed (owner asked for all of M6 first, review after)
+
+### Acceptance criteria
+| AC | Result | Evidence |
+|---|---|---|
+| AC-1 | ✅ pass | `MeaningPromptTests`: prompt has word, example, game title; well-formed reply parsed (pos + meaning + note); chatter, no-Thai, missing separator, out-of-range, empty → nothing, no throw. |
+| AC-2 | ✅ pass | `testProviderChoiceOrder` with an injected key lookup (chat → selected → any LLM → Google). |
+| AC-3 | ✅ pass | `testMeaningIsSavedAndNotRequestedAgainUnlessForced` (1 request, saved; second lookup 0; force 1). Also chatter → no meaning + message; 401 → Thai message, no retry; explain without key → no request. |
+| AC-4 | ✅ pass | `grep Meaning Sources/Services/PipelineCoordinator.swift` → none; keys only read inside `lookUp`/`explain`; no permission API. |
+| AC-5…AC-7 | ⏳ pending owner | Steps below. |
+| AC-8 | ✅ pass | `Executed 176 tests, with 0 failures`, `** TEST SUCCEEDED **`, `** BUILD SUCCEEDED **`. |
+
+### Build & test
+```
+Executed 176 tests, with 0 failures (0 unexpected)
+** TEST SUCCEEDED **
+** BUILD SUCCEEDED **
+```
+
+### Changed files (this task only, on top of T-0022)
+```
+ Resources/Info.plist                    | 1.13.0
+ Sources/Services/MeaningService.swift   | (new) source choice, prompts/parsing, service
+ Sources/Services/LearningStore.swift    | optional meaning / explanation fields
+ Sources/Views/LearningView.swift        | meanings in rows, lookup controls, detail panes
+ Tests/MeaningServiceTests.swift         | (new, 8 tests)
+```
+
+### Manual checks for the owner
+After `./build.sh`:
+- **AC-5:** with a Claude or OpenAI key → Learning → คำศัพท์ → **หาความหมาย** → Thai meanings
+  that fit the game, with part of speech and an **AI** badge; quit and reopen → still there.
+- **AC-6:** with no LLM key (Google Free only) → look up words → meanings with a **Google**
+  badge and the "ไม่มีบริบท" note.
+- **AC-7:** open a sentence → **อธิบายประโยคนี้** → a short Thai explanation. Turn off Wi-Fi
+  and press **อธิบายใหม่** → a Thai error message; the app (and translation) keeps working.
+
+### Proposed follow-ups
+- none
 
 ---
 
@@ -110,3 +193,5 @@ Learning window lists words and sentences; this task fills in a Thai meaning for
 | Date | Change | Who | Note |
 |---|---|---|---|
 | 2026-09-24 | → PLANNED | Cowork | created; READY when T-0022 is DONE |
+| 2026-09-24 | PLANNED → IN_PROGRESS | Claude Code | started on the owner's instruction ("do all of M6") while T-0022 is in REVIEW; stacked, uncommitted |
+| 2026-09-24 | IN_PROGRESS → REVIEW | Claude Code | test/code/build ACs pass; AC-5…AC-7 manual pending owner |

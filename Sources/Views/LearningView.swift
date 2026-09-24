@@ -4,6 +4,7 @@ import SwiftUI
 struct LearningView: View {
     @ObservedObject private var store = LearningStore.shared
     @ObservedObject private var settings = AppSettings.shared
+    @ObservedObject private var meanings = MeaningService.shared
 
     enum Tab: String, CaseIterable, Identifiable {
         case sentences = "ประโยค"
@@ -24,16 +25,22 @@ struct LearningView: View {
     @State private var sort: Sort = .newest
     @AppStorage("learningHideKnown") private var hideKnown = true
     @State private var confirmClear = false
+    /// Item shown in the detail pane (T-0023)
+    @State private var selectedSentence: UUID?
+    @State private var selectedWord: UUID?
 
     var body: some View {
         VStack(spacing: 0) {
             header
             Divider()
-            content
+            HStack(spacing: 0) {
+                content
+                detail
+            }
             Divider()
             footer
         }
-        .frame(minWidth: 520, minHeight: 420)
+        .frame(minWidth: 620, minHeight: 440)
         .onAppear(perform: chooseDefaultGame)
         .onChange(of: store.games) { _, _ in
             if !store.games.contains(game) { chooseDefaultGame() }
@@ -95,7 +102,7 @@ struct LearningView: View {
             if items.isEmpty {
                 emptyState(total: data.sentences.count)
             } else {
-                List(items) { sentence in
+                List(items, selection: $selectedSentence) { sentence in
                     SentenceRow(sentence: sentence) {
                         store.setKnown(sentence: sentence.id, in: game, !sentence.isKnown)
                     }
@@ -110,7 +117,7 @@ struct LearningView: View {
             if items.isEmpty {
                 emptyState(total: data.words.count)
             } else {
-                List(items) { word in
+                List(items, selection: $selectedWord) { word in
                     WordRow(word: word) {
                         store.setKnown(word: word.id, in: game, !word.isKnown)
                     }
@@ -145,6 +152,9 @@ struct LearningView: View {
             Text("แสดง \(shown) จาก \(total) \(tab == .sentences ? "ประโยค" : "คำ")")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            if tab == .words {
+                lookupControls(words: filteredWords(data.words))
+            }
             Spacer()
             Button(role: .destructive) {
                 confirmClear = true
@@ -154,6 +164,54 @@ struct LearningView: View {
             .disabled(game.isEmpty || (data.sentences.isEmpty && data.words.isEmpty))
         }
         .padding(8)
+    }
+
+    // MARK: Meanings (T-0023)
+
+    @ViewBuilder
+    private func lookupControls(words: [LearningWord]) -> some View {
+        let missing = words.filter { $0.meaning == nil }
+        if meanings.isWorking {
+            ProgressView().controlSize(.small)
+            Button("หยุด") { meanings.cancel() }
+        } else {
+            Button {
+                meanings.lookUp(
+                    wordIDs: missing.map(\.id), game: game,
+                    sourceLanguage: settings.sourceLanguage.englishName,
+                    sourceCode: settings.sourceLanguage.translationCode
+                )
+            } label: {
+                Label("หาความหมาย\(missing.isEmpty ? "" : " (\(min(missing.count, MeaningService.batchSize)))")", systemImage: "text.book.closed")
+            }
+            .disabled(missing.isEmpty)
+            .help("หาความหมายของคำที่แสดงอยู่และยังไม่มีความหมาย ครั้งละไม่เกิน \(MeaningService.batchSize) คำ")
+        }
+        if let error = meanings.lastError {
+            Text(error)
+                .font(.caption)
+                .foregroundStyle(.red)
+                .lineLimit(2)
+        } else if meanings.lastUsedGoogle {
+            Text("ความหมายจาก Google (ไม่มีบริบท) — ใส่ API key ของ Claude/OpenAI จะได้ความหมายตามเกม")
+                .font(.caption)
+                .foregroundStyle(.orange)
+                .lineLimit(2)
+        }
+    }
+
+    @ViewBuilder
+    private var detail: some View {
+        let data = store.data(for: game)
+        if tab == .words, let id = selectedWord, let word = data.words.first(where: { $0.id == id }) {
+            Divider()
+            WordDetail(word: word, game: game, meanings: meanings, settings: settings)
+                .frame(width: 280)
+        } else if tab == .sentences, let id = selectedSentence, let sentence = data.sentences.first(where: { $0.id == id }) {
+            Divider()
+            SentenceDetail(sentence: sentence, game: game, meanings: meanings, settings: settings)
+                .frame(width: 280)
+        }
     }
 
     // MARK: Filtering
@@ -262,9 +320,20 @@ private struct WordRow: View {
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                 }
-                Text("ความหมาย: —")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                HStack(spacing: 4) {
+                    Text("ความหมาย: \(word.meaning ?? "—")")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    if word.meaningSource == "google" {
+                        Text("Google")
+                            .font(.caption2)
+                            .foregroundStyle(.orange)
+                    } else if word.meaningSource == "ai" {
+                        Text("AI")
+                            .font(.caption2)
+                            .foregroundStyle(.blue)
+                    }
+                }
                 if let example = word.examples.last {
                     Text(example)
                         .font(.caption)
@@ -298,3 +367,119 @@ enum PartOfSpeech {
         }
     }
 }
+
+// MARK: - Detail panes (T-0023)
+
+private struct WordDetail: View {
+    let word: LearningWord
+    let game: String
+    @ObservedObject var meanings: MeaningService
+    @ObservedObject var settings: AppSettings
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(word.word)
+                    .font(.title2.weight(.semibold))
+                    .textSelection(.enabled)
+                if let pos = PartOfSpeech.thaiName(word.partOfSpeech) {
+                    Text(pos).foregroundStyle(.secondary)
+                }
+
+                Group {
+                    if let meaning = word.meaning {
+                        Text(meaning)
+                            .font(.title3)
+                            .textSelection(.enabled)
+                        if let note = word.meaningNote {
+                            Text(note).font(.callout).foregroundStyle(.secondary)
+                        }
+                        if word.meaningSource == "google" {
+                            Text("จาก Google — แปลคำเดี่ยว ไม่มีบริบทของเกม")
+                                .font(.caption).foregroundStyle(.orange)
+                        }
+                    } else if meanings.isWorking {
+                        ProgressView("กำลังหาความหมาย…").controlSize(.small)
+                    } else {
+                        Text("ยังไม่มีความหมาย").foregroundStyle(.secondary)
+                    }
+                }
+
+                Button("หาความหมายใหม่") { lookUp(force: true) }
+                    .disabled(meanings.isWorking)
+
+                if let error = meanings.lastError {
+                    Text(error).font(.caption).foregroundStyle(.red)
+                }
+
+                if !word.examples.isEmpty {
+                    Divider()
+                    Text("ตัวอย่างจากเกม").font(.caption).foregroundStyle(.secondary)
+                    ForEach(word.examples.reversed(), id: \.self) { example in
+                        Text(example).font(.callout).textSelection(.enabled)
+                    }
+                }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        // Opening a word without a meaning looks it up
+        .onAppear { if word.meaning == nil { lookUp(force: false) } }
+        .onChange(of: word.id) { _, _ in if word.meaning == nil { lookUp(force: false) } }
+    }
+
+    private func lookUp(force: Bool) {
+        meanings.lookUp(
+            wordIDs: [word.id], game: game,
+            sourceLanguage: settings.sourceLanguage.englishName,
+            sourceCode: settings.sourceLanguage.translationCode,
+            force: force
+        )
+    }
+}
+
+private struct SentenceDetail: View {
+    let sentence: LearningSentence
+    let game: String
+    @ObservedObject var meanings: MeaningService
+    @ObservedObject var settings: AppSettings
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(sentence.original)
+                    .font(.title3)
+                    .textSelection(.enabled)
+                Text(sentence.translation)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+
+                Divider()
+
+                if let explanation = sentence.explanation {
+                    Text(explanation)
+                        .font(.callout)
+                        .textSelection(.enabled)
+                    Button("อธิบายใหม่") { explain(force: true) }
+                        .disabled(meanings.isWorking)
+                } else if meanings.isWorking {
+                    ProgressView("กำลังอธิบาย…").controlSize(.small)
+                } else {
+                    // Pressing it without an AI key shows "ต้องมี API key…" (keys are only read on request)
+                    Button("อธิบายประโยคนี้") { explain(force: false) }
+                }
+
+                if let error = meanings.lastError {
+                    Text(error).font(.caption).foregroundStyle(.red)
+                }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func explain(force: Bool) {
+        meanings.explain(sentenceID: sentence.id, game: game, sourceLanguage: settings.sourceLanguage.englishName, force: force)
+    }
+}
+

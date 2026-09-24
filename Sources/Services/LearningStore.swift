@@ -12,6 +12,8 @@ struct LearningSentence: Codable, Identifiable, Equatable {
     var lastSeen: Date
     var timesSeen: Int
     var isKnown = false
+    /// Short Thai explanation from the AI (T-0023); nil until asked
+    var explanation: String?
 }
 
 /// A word found in translated lines — its base form (T-0022)
@@ -27,6 +29,12 @@ struct LearningWord: Codable, Identifiable, Equatable {
     var lastSeen: Date
     var timesSeen: Int
     var isKnown = false
+    /// Thai meaning (T-0023); nil until looked up
+    var meaning: String?
+    /// Where the meaning came from: "ai" (in context) or "google" (no context)
+    var meaningSource: String?
+    /// Short Thai note from the AI about the word in this game
+    var meaningNote: String?
 
     static let maxExamples = 3
 }
