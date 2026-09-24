@@ -101,7 +101,7 @@ again or stops and starts.
 
 **Outcome:** PASS — all criteria are `[test]`/`[code]`/`[build]` and pass
 **Version:** 1.11.23 → 1.11.24
-**Commit:** not committed (waiting for owner)
+**Commit:** `a4a0760`
 
 ### Acceptance criteria
 | AC | Result | Evidence |
