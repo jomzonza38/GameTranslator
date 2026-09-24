@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **Status** | REVIEW |
+| **Status** | DONE |
 | **Type** | test |
 | **Priority** | P3 |
 | **Version impact** | none (test/logging only — patch if app code changes) |
@@ -111,9 +111,20 @@ the unit tests, and confirm the file is unchanged.
 
 ## Review
 
+**Cowork, 2026-09-24 — accepted. DONE.**
+
+| AC | Verdict | Note |
+|---|---|---|
+| AC-1 | ✅ | `isRunningUnitTests` uses the same check as `AppDelegate`. `logFileURL = nil`, and `setup()` returns early (it would otherwise wipe the owner's log). |
+| AC-2 | ✅ | The spec allowed Claude Code to check this. Size and sha were identical before and after the 92-test run. |
+| AC-3 | ✅ | |
+
+- The proposed follow-up (old test lines still in today's log) needs no task: the log is cleared at the next app launch.
+
 ## Status history
 | Date | Change | Who | Note |
 |---|---|---|---|
 | 2026-09-24 | → READY | Cowork | created for M3 |
 | 2026-09-24 | READY → IN_PROGRESS | Claude Code | started (stacked on T-0010…T-0012, uncommitted) |
 | 2026-09-24 | IN_PROGRESS → REVIEW | Claude Code | all ACs pass (AC-2 checked by Claude Code) |
+| 2026-09-24 | REVIEW → DONE | Cowork | all ACs pass |

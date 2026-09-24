@@ -140,9 +140,23 @@ Executed 92 tests, with 0 failures (0 unexpected) in 0.733 (0.778) seconds
 
 ## Review
 
+**Cowork, 2026-09-24 — code review passed; waiting for owner's AC-3. Edge case found → T-0014.**
+
+| AC | Verdict | Note |
+|---|---|---|
+| AC-1 | ✅ | `TranslationRefusal.kind`: 401/403/missing key → key, `quotaExceeded` → quota. 429/5xx/timeout/offline/cancel → nil. |
+| AC-2 | ✅ | `guard !isTranslationPaused` comes before the only `translateBatch` call. `updateProvider()` clears the pause, `lastError` and `failedAt`. `start` clears it too. |
+| AC-3 | ⏳ owner | |
+| AC-4 | ✅ | 92 tests. |
+
+- **Race (not covered by an AC):** `translatePending` is awaited inside the frame, while Settings calls `updateProvider()` on the main actor during that await. Sequence: a request with the old or half-typed key is in flight → the user saves the correct key (pause isn't set yet, so nothing to clear) → the old request comes back 401 → the app pauses **with the new key already in place**. It stays paused until the key changes again or the user stops and starts. The same applies to switching provider mid-request. The ACs pass, so this task isn't failed. The fix is new task **T-0014**.
+- Accepted per spec: Google Free 403 (often a temporary block) also pauses and needs a provider change or stop/start to resume. The Thai message says so.
+- Process note: started while PLANNED (dependency T-0010 not DONE) on the owner's instruction. Recorded in history, no harm done.
+
 ## Status history
 | Date | Change | Who | Note |
 |---|---|---|---|
 | 2026-09-24 | → PLANNED | Cowork | created for M3; READY when T-0010 is DONE |
 | 2026-09-24 | PLANNED → IN_PROGRESS | Claude Code | started on owner's instruction ("do all tasks, review after") while T-0010 is still in REVIEW; stacked on T-0010/T-0011, uncommitted |
 | 2026-09-24 | IN_PROGRESS → REVIEW | Claude Code | test/code/build ACs pass; AC-3 manual pending owner |
+| 2026-09-24 | — | Cowork | code review passed; race → T-0014; waiting for owner AC-3 |

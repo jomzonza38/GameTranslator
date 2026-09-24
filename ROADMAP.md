@@ -26,7 +26,7 @@ From the owner — every task must keep these (details in `CLAUDE.md`):
 | M0 — Workflow | Cowork × Claude Code task system in place | done 2026-09-23 | — |
 | M1 — Stability | Close the gaps found in the 2026-09-23 audits that affect the standing goals | done 2026-09-24 | T-0001 … T-0005 |
 | M2 — Reliability & UX | Errors visible to the user, no request storms, correct placement on every display | done 2026-09-24 | T-0006 … T-0009 |
-| M3 — Providers & settings hygiene | Keys saved cleanly, right cache per provider, no endless retries on a refused key, clean test logs | planned | T-0010 … T-0013 |
+| M3 — Providers & settings hygiene | Keys saved cleanly, right cache per provider, no endless retries on a refused key, clean test logs | in review | T-0010 … T-0014 |
 | M4 — … | *To be defined by Cowork with the owner* | — | — |
 
 ## Backlog (not yet tasks)
@@ -80,3 +80,6 @@ T-0007 · batch fallback request storm → T-0008 · multi-monitor coordinates �
 - → T-0012 · **Auth errors retried forever** — with an invalid key the pipeline retries every
   ~3 s for as long as text is on screen (seen 2026-09-24, HTTP 401). Pause
   translation (or back off much longer) after 401/403 until the key changes.
+- From T-0011 review: a line the LLM always answers with chatter is retried every 3 s
+  for as long as it is on screen (one paid request each time). Consider a growing
+  back-off or a retry cap for chatter.

@@ -58,6 +58,7 @@ and fires a warm-up request.
 - **AC-1** [test] Key normalisation: `"  sk-abc \n"` is stored/used as `"sk-abc"`; an all-whitespace key counts as empty.
 - **AC-2** [code] No Keychain write or provider rebuild per keystroke; the typed key is applied when editing ends (and not lost when the window closes).
 - **AC-3** [code] Switching provider invalidates the previous provider's `URLSession` (e.g. `finishTasksAndInvalidate`).
+  > Amended 2026-09-24 (Cowork, review): also met by one shared `URLSession` per provider type, so rebuilding a provider creates no new session. Invalidation was dropped because a request started on an invalidated session raises an uncaught NSException (Claude Code tested it); that would break stability rule 2.
 - **AC-4** [manual] Steps: 1) Settings → Claude Haiku, paste your real key with a trailing space, close Settings. 2) Translate a game. Expected: translations appear (no HTTP 401). 3) Reopen Settings: key is still there.
 - **AC-5** [build] Unit tests and Release build succeed.
 
@@ -160,9 +161,22 @@ change per character.
 
 ## Review
 
+**Cowork, 2026-09-24 — code review passed; waiting for owner's AC-4.**
+
+| AC | Verdict | Note |
+|---|---|---|
+| AC-1 | ✅ | `APIKeyInput.normalized` + 5 tests. Keys loaded from Keychain / UserDefaults are trimmed too, which is a good extra. |
+| AC-2 | ✅ | `APIKeyField` edits a local draft and saves on Return, focus loss, disappear, or a 1 s pause. `valueToSave` skips a save when nothing changed, so `onAppear`/`onChange(key)` don't loop. |
+| AC-3 | ✅ (alternative accepted) | Shared static session per provider type. Invalidating would crash an in-flight request on the old provider (T-0008 per-line fallback), so accepting the alternative is the right call. Spec amended. At most 5 sessions exist. |
+| AC-4 | ⏳ owner | |
+| AC-5 | ✅ | 83 tests. |
+
+- Note, no action: the 1 s pause can save a half-typed key while the user types by hand. That costs one warm-up request, and while running it can hit a 401 → pause (T-0012) until the full key is saved. That's acceptable. The race it can trigger is covered by T-0014.
+
 ## Status history
 | Date | Change | Who | Note |
 |---|---|---|---|
 | 2026-09-24 | → READY | Cowork | created for M3 |
 | 2026-09-24 | READY → IN_PROGRESS | Claude Code | started (owner: do T-0010…T-0013, review after) |
 | 2026-09-24 | IN_PROGRESS → REVIEW | Claude Code | AC-3 met by shared sessions instead of invalidation (crash risk) — Cowork to confirm; AC-4 manual |
+| 2026-09-24 | — | Cowork | code review passed; AC-3 alternative accepted (spec amended); waiting for owner AC-4 |

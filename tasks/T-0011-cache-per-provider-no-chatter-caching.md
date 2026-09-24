@@ -157,9 +157,25 @@ Google lines again (from its cache, no delay).
 
 ## Review
 
+**Cowork, 2026-09-24 — code review passed; waiting for owner's AC-4.**
+
+| AC | Verdict | Note |
+|---|---|---|
+| AC-1 | ✅ | Cache key = `provider|sourceLang` + `\n` + text. Keying instead of clearing is better: switching back reuses the old provider's cache. |
+| AC-2 | ✅ | `translateBatchMarkingFallbacks` → `nil` for chatter; nothing is cached or returned for it. The `LLMChatProvider` extension's version is the more specific witness, so Claude/OpenAI get it through the existential. `testChatterReplyIsNotCachedAndIsAskedAgain` proves this. |
+| AC-3 | ✅ | `applyTranslationScopeChangeIfNeeded()` runs at the start of each frame. A reply from the old provider still in flight gets written to region state and is then reset on the next frame. It is cached under the old provider's key, which is correct. |
+| AC-4 | ⏳ owner | |
+| AC-5 | ✅ | 89 tests. |
+
+- Removing the unused `translate(_:)` is justified: it was the one unscoped cache path left.
+- The missing-result → `failedAt` back-off also fixes the old retry-every-frame gap. Good.
+- Backlog: a line the LLM always answers with chatter is retried every 3 s for as long as it stays on screen, costing one paid request each time. That's within spec, but it should back off more (ROADMAP backlog).
+- Scope has no target language (always Thai today). If more target languages are added later, it must be added to the scope.
+
 ## Status history
 | Date | Change | Who | Note |
 |---|---|---|---|
 | 2026-09-24 | → READY | Cowork | created for M3 |
 | 2026-09-24 | READY → IN_PROGRESS | Claude Code | started (stacked on T-0010, uncommitted — owner asked for all tasks before review) |
 | 2026-09-24 | IN_PROGRESS → REVIEW | Claude Code | test/code/build ACs pass; AC-4 manual pending owner |
+| 2026-09-24 | — | Cowork | code review passed; waiting for owner AC-4 |
