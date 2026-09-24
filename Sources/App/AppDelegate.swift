@@ -146,6 +146,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        // Learning data (T-0022): its save is debounced — write what's pending now
+        MainActor.assumeIsolated {
+            LearningStore.shared.saveIfNeeded()
+        }
         Task { @MainActor in
             await statusBarController?.pipeline.stop()
         }

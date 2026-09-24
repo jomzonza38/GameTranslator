@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **Status** | READY |
+| **Status** | REVIEW |
 | **Type** | feature |
 | **Priority** | P2 |
 | **Version impact** | minor |
@@ -120,7 +120,98 @@ T-0024 (quiz) and T-0025 (AI chat) build on.
 
 ## Implementation Notes
 
+- **Store** — `Sources/Services/LearningStore.swift` (new), `@MainActor ObservableObject`:
+  - Model: `LearningFile { version, games: [title: GameLearningData], lastGame }`;
+    `GameLearningData { sentences, words }`.
+  - `LearningSentence`: original, Thai, first/last seen, times seen, known.
+  - `LearningWord`: base form, part of speech, ≤ 3 example lines, first/last seen,
+    times seen, known.
+  - JSON at `~/Library/Application Support/com.worawalan.GameTranslator/learning.json`.
+- **Fed from the pipeline** — same place as `TranslationHistory`, in `translatePending`,
+  only for real translations. Glossary exact matches and cached / stale reuse never reach
+  that code, and neither do chatter fallbacks (T-0011 leaves them out of the results).
+  So only lines a provider actually translated are collected. Decision: glossary
+  shortcuts are **not** collected; their terms still show up as words whenever they
+  appear inside a translated line.
+- **Cost (Req 7, AC-5):** `add()` on the main actor is an in-memory upsert (linear
+  search of that game's list, ≤ 5,000 items, on new translations only — never per
+  frame). Word extraction (`NLTagger`) runs in `Task.detached(priority: .utility)` and is
+  applied back. Saving is debounced by 1 s; encoding and the atomic write happen in a
+  detached task. No network and no permission API. On quit, pending changes are written
+  synchronously in `applicationWillTerminate` (`saveIfNeeded`), so the last second isn't
+  lost (small addition to `AppDelegate`, outside *Files / Modules*).
+- **Words (Req 3):** `WordExtractor` uses `NLTagger` (`.lemma` + `.lexicalClass`) on
+  device, with the game's source language set.
+  - Base form, lower-cased: "knights" → "knight", "drew" → "draw", "swords" → "sword".
+  - Skipped: texts with < 2 letters ("15", "7/1", "x" → no sentence, no words),
+    numbers, Latin single letters, punctuation, and an English stop-word list
+    (~110 function words, incl. "the", "their").
+  - JA/ZH/KO are split into words by the tagger; single characters are kept for those
+    scripts.
+  - Glossary terms are not filtered (useful to learn).
+  - Part of speech is stored as the NL tag and shown in Thai (คำนาม, คำกริยา, …).
+- **Limits (Req 8):** per game 5,000 sentences and 10,000 words. When over, unmarked
+  items with the fewest sightings and the oldest `lastSeen` go first. Known items, and
+  words whose example lines are known sentences, are never dropped.
+- **Broken file (Req 6):** unreadable JSON → start empty, log it, and move the file to
+  `learning.corrupt-<date>.json` (never overwritten). A missing file → empty. Dates are
+  stored as `Date`'s own reference-date number (exact round-trip).
+- **Window (Req 1, 4, 5)** — `Sources/Views/LearningView.swift` (new):
+  - Menu item **"📚 เรียนรู้คำศัพท์..."** below ประวัติคำแปล; one window, reopening brings it
+    to the front.
+  - Game picker: default = the game being translated, else the last game with data,
+    else the first.
+  - Tabs ประโยค / คำศัพท์, search, sort ล่าสุด / เห็นบ่อย / A–Z, "ซ่อนที่จำได้แล้ว"
+    (default on, remembered), count "แสดง X จาก Y".
+  - Known toggle per row, delete via right-click, "ล้างรายการของเกมนี้" with a confirmation.
+  - Word rows show word, part of speech, times seen, "ความหมาย: —" (T-0023), last example.
+- The History window is unchanged.
+
 ## Result
+
+**Outcome:** PARTIAL — `[test]`/`[code]`/`[build]` criteria pass; AC-6 and AC-7 pending owner
+**Version:** 1.11.32 → 1.12.0 (minor: new feature)
+**Commit:** not committed (owner asked for all of M6 first, review after)
+
+### Acceptance criteria
+| AC | Result | Evidence |
+|---|---|---|
+| AC-1 | ✅ pass | `LearningStoreTests.testSameOriginalInOneGameIsStoredOnce` (times seen 2), `testSameTextInTwoGamesIsTwoSentences`. |
+| AC-2 | ✅ pass | `testEnglishWordsAreBaseFormsWithoutFunctionWords` (knight, draw/drew, sword; no the/their/punctuation), `testNumbersAndSingleLettersGiveNothing` ("15", "7/1", "x"), `testWordsCollectExamplesAndCounts`, `testJapaneseIsSplitIntoWords`. |
+| AC-3 | ✅ pass | `testSaveAndLoadKeepEverything` (file equal after reload, incl. known flags, part of speech, dates), `testCorruptFileLoadsEmptyAndIsMovedAside` (broken content kept in `learning.corrupt-…`), `testMissingFileLoadsEmpty`. |
+| AC-4 | ✅ pass | `testSizeLimitDropsOldestUnmarkedFirstAndKeepsKnown` (known sentence + its word + known word kept). |
+| AC-5 | ✅ pass | `PipelineCoordinator`: one `LearningStore.shared.add(...)` next to the history call; extraction and file I/O off the main actor, save debounced; no URLSession / permission API in `LearningStore`. |
+| AC-6, AC-7 | ⏳ pending owner | Steps below. |
+| AC-8 | ✅ pass | `Executed 168 tests, with 0 failures`, `** TEST SUCCEEDED **`, `** BUILD SUCCEEDED **`. |
+
+### Build & test
+```
+Executed 168 tests, with 0 failures (0 unexpected)
+** TEST SUCCEEDED **
+** BUILD SUCCEEDED **
+```
+
+### Changed files
+```
+ Resources/Info.plist                        | 1.12.0
+ Sources/Services/LearningStore.swift        | (new) model, extraction, persistence, limits
+ Sources/Views/LearningView.swift            | (new) Learning window
+ Sources/App/StatusBarController.swift       | menu item + window
+ Sources/Services/PipelineCoordinator.swift  | one add() next to the history call
+ Sources/App/AppDelegate.swift               | save pending learning data at quit
+ Tests/LearningStoreTests.swift              | (new, 10 tests; temp folder)
+```
+
+### Manual checks for the owner
+After `./build.sh`:
+- **AC-6:** translate a game for a minute → menu "📚 เรียนรู้คำศัพท์..." → the game's
+  sentences and words are listed; try search, the three sorts, the ✓ "จำได้แล้ว" toggle
+  and "ซ่อนที่จำได้แล้ว". Quit the app and reopen → the lists are still there.
+- **AC-7:** translate a second game, open the window, switch the game picker → each game
+  shows only its own items.
+
+### Proposed follow-ups
+- none
 
 ---
 
@@ -131,3 +222,5 @@ T-0024 (quiz) and T-0025 (AI chat) build on.
 |---|---|---|---|
 | 2026-09-24 | → PLANNED | Cowork | created from owner request (learning menu) |
 | 2026-09-24 | PLANNED → READY | Cowork | owner answered storage/meaning/chat questions |
+| 2026-09-24 | READY → IN_PROGRESS | Claude Code | started (owner: do all of M6, review after) |
+| 2026-09-24 | IN_PROGRESS → REVIEW | Claude Code | test/code/build ACs pass; AC-6, AC-7 manual pending owner |

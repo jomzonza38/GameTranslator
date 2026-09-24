@@ -11,6 +11,7 @@ final class StatusBarController: NSObject, ObservableObject {
     private var menu: NSMenu?
     private var settingsWindow: NSWindow?
     private var historyWindow: NSWindow?
+    private var learningWindow: NSWindow?
     private var welcomePopover: NSPopover?
     private var welcomeWindow: NSWindow?
 
@@ -282,6 +283,11 @@ final class StatusBarController: NSObject, ObservableObject {
         historyItem.target = self
         menu.addItem(historyItem)
 
+        // Learning (T-0022)
+        let learningItem = NSMenuItem(title: "📚 เรียนรู้คำศัพท์...", action: #selector(openLearning), keyEquivalent: "")
+        learningItem.target = self
+        menu.addItem(learningItem)
+
         // How to use
         let helpItem = NSMenuItem(title: "❓ วิธีใช้", action: #selector(showWelcomeAction), keyEquivalent: "")
         helpItem.target = self
@@ -521,6 +527,26 @@ final class StatusBarController: NSObject, ObservableObject {
         }
 
         historyWindow?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// One Learning window; reopening brings it to the front (T-0022)
+    @objc private func openLearning() {
+        if learningWindow == nil {
+            let window = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 640, height: 620),
+                styleMask: [.titled, .closable, .miniaturizable, .resizable],
+                backing: .buffered,
+                defer: false
+            )
+            window.title = "Game Translator — เรียนรู้คำศัพท์"
+            window.center()
+            window.isReleasedWhenClosed = false
+            window.contentView = NSHostingView(rootView: LearningView())
+            learningWindow = window
+        }
+
+        learningWindow?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 

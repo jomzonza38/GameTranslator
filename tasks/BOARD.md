@@ -10,7 +10,7 @@ Lifecycle and who may set each status: `WORKFLOW.md` §3.
 
 | ID | Title | Status | Priority | Depends on | Next step by |
 |---|---|---|---|---|---|
-| [T-0022](T-0022-learning-collection-window.md) | Learning window: every sentence and word the app has translated, kept per game | READY | P2 | — | Claude Code |
+| [T-0022](T-0022-learning-collection-window.md) | Learning window: every sentence and word the app has translated, kept per game | REVIEW | P2 | — | Cowork (review) + owner (AC-6, AC-7 manual) |
 | [T-0023](T-0023-word-meanings.md) | Each word and sentence in the Learning window explains what it means | PLANNED | P2 | T-0022 | Cowork (READY after T-0022) |
 | [T-0024](T-0024-learning-quiz.md) | Multiple-choice quiz on the words and sentences collected from the game | PLANNED | P2 | T-0023 | Cowork (READY after T-0023) |
 | [T-0025](T-0025-ask-ai-about-a-translation.md) | Ask the AI why a sentence was translated that way | PLANNED | P2 | T-0022 | Cowork (READY after T-0022) |

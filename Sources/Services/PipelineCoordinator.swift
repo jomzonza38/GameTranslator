@@ -827,6 +827,13 @@ final class PipelineCoordinator: ObservableObject {
                     translation: translation,
                     game: settings.currentProfile.title
                 )
+                // Learning window (T-0022): in-memory update; words and saving run later, off the main actor
+                LearningStore.shared.add(
+                    original: text,
+                    translation: translation,
+                    game: settings.currentProfile.title,
+                    languageCode: settings.sourceLanguage.rawValue
+                )
                 GameLog.log("\u{2713} \"\(text)\" \u{2192} \"\(translation)\"")
             }
             lastError = nil
