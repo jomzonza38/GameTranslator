@@ -247,6 +247,18 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(showWelcomeOnLaunch, forKey: "showWelcomeOnLaunch") }
     }
 
+    /// Panel mode: pointing at a text in the game scrolls the panel to its translation (T-0021)
+    @Published var panelFollowsGamePointer: Bool {
+        didSet { defaults.set(panelFollowsGamePointer, forKey: Self.panelFollowsGamePointerKey) }
+    }
+
+    static let panelFollowsGamePointerKey = "panelFollowsGamePointer"
+
+    /// Stored value, on by default
+    static func loadPanelFollowsGamePointer(_ defaults: UserDefaults) -> Bool {
+        defaults.object(forKey: panelFollowsGamePointerKey) as? Bool ?? true
+    }
+
     /// Panel (full-screen mode): show a picture of each text's original pixels (T-0018)
     @Published var showSourceThumbnails: Bool {
         didSet { defaults.set(showSourceThumbnails, forKey: Self.showSourceThumbnailsKey) }
@@ -350,6 +362,7 @@ final class AppSettings: ObservableObject {
         self.sourceLanguage = SourceLanguage(rawValue: defaults.string(forKey: "sourceLanguage") ?? "") ?? .english
         self.showOriginalText = defaults.object(forKey: "showOriginalText") as? Bool ?? false
         self.showSourceThumbnails = Self.loadShowSourceThumbnails(defaults)
+        self.panelFollowsGamePointer = Self.loadPanelFollowsGamePointer(defaults)
         self.showWelcomeOnLaunch = defaults.object(forKey: "showWelcomeOnLaunch") as? Bool ?? true
 
         let modeRaw = defaults.string(forKey: "displayMode") ?? DisplayMode.overlay.rawValue

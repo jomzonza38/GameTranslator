@@ -413,6 +413,12 @@ private struct OverlaySettingsTab: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
+                Toggle("เลื่อนแผงคำแปลไปที่ข้อความที่ชี้ในเกม", isOn: $settings.panelFollowsGamePointer)
+
+                Text("โหมดแผงคำแปล: วางเมาส์บนข้อความในเกมครู่หนึ่ง แผงจะเลื่อนไปที่คำแปลนั้นและไฮไลต์ไว้")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
                 Toggle("แสดงหน้าต้อนรับตอนเปิดแอป", isOn: $settings.showWelcomeOnLaunch)
 
                 Text("บอกว่าแอปทำงานแล้วและไอคอนอยู่ตรงไหนบนแถบเมนู")

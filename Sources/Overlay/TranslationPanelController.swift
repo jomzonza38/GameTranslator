@@ -36,6 +36,8 @@ final class TranslationPanelData: ObservableObject {
 
     /// Entry the mouse is over (by `Entry.id`)
     @Published private(set) var hoveredID: String?
+    /// Entry whose text the mouse rests on in the game (T-0021)
+    @Published private(set) var pointedID: String?
     /// Outline for the hovered entry's source text (nil = nothing to outline)
     @Published private(set) var highlight: SourceHighlight?
 
@@ -61,7 +63,18 @@ final class TranslationPanelData: ObservableObject {
         if let hoveredID, !entries.contains(where: { $0.id == hoveredID }) {
             self.hoveredID = nil
         }
+        if let pointedID, !entries.contains(where: { $0.id == pointedID }) {
+            self.pointedID = nil
+        }
         refreshHighlight()
+    }
+
+    /// Mark the entry whose text the mouse rests on in the game (nil = none)
+    func setPointed(_ id: String?) {
+        let valid = id.flatMap { id in entries.contains { $0.id == id } ? id : nil }
+        if valid != pointedID {
+            pointedID = valid
+        }
     }
 
     /// Mouse entered or left an entry's row
@@ -77,6 +90,7 @@ final class TranslationPanelData: ObservableObject {
     func clear() {
         entries = []
         hoveredID = nil
+        pointedID = nil
         refreshHighlight()
     }
 
@@ -217,14 +231,24 @@ struct TranslationPanelContent: View {
                 }
                 .frame(maxWidth: .infinity)
             } else {
-                ScrollView(.vertical, showsIndicators: true) {
-                    LazyVStack(alignment: .leading, spacing: 2) {
-                        ForEach(data.entries) { entry in
-                            translationRow(entry)
+                ScrollViewReader { proxy in
+                    ScrollView(.vertical, showsIndicators: true) {
+                        LazyVStack(alignment: .leading, spacing: 2) {
+                            ForEach(data.entries) { entry in
+                                translationRow(entry)
+                                    .id(entry.id)
+                            }
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                    }
+                    // Mouse rests on a text in the game → bring its translation into view
+                    .onChange(of: data.pointedID) { _, pointed in
+                        guard let pointed else { return }
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            proxy.scrollTo(pointed, anchor: .center)
                         }
                     }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
                 }
             }
         }
@@ -407,7 +431,7 @@ struct TranslationPanelContent: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 4)
-                .fill(Color.white.opacity(data.hoveredID == entry.id ? 0.10 : 0.03))
+                .fill(Color.white.opacity(data.hoveredID == entry.id || data.pointedID == entry.id ? 0.10 : 0.03))
         )
         // Pointing at an entry outlines its text in the game (T-0019)
         .onHover { isInside in
@@ -427,6 +451,10 @@ final class TranslationPanelController: NSObject, NSWindowDelegate {
     /// Click-through outline around the hovered entry's source text (T-0019)
     private let sourceHighlight = SourceHighlightWindow()
     private var highlightSubscription: AnyCancellable?
+    /// Polls the mouse position while the panel is shown (T-0021). `NSEvent.mouseLocation`
+    /// needs no permission — no event tap, no Accessibility / Input Monitoring.
+    private var pointerTimer: Timer?
+    private var pointerTracker = PointerRestTracker()
 
     /// Expanded panel size
     private let expandedWidth: CGFloat = 320
@@ -454,6 +482,7 @@ final class TranslationPanelController: NSObject, NSWindowDelegate {
         }
 
         panel.orderFrontRegardless()
+        startPointerTracking()
 
         // Draw / move / remove the outline as the hovered entry changes
         if highlightSubscription == nil {
@@ -483,10 +512,52 @@ final class TranslationPanelController: NSObject, NSWindowDelegate {
 
     func hide() {
         cancellables.removeAll()
+        stopPointerTracking()
         panelWindow?.orderOut(nil)
         panelData.clear()
         // Stop, game closed, Overlay mode: never leave an outline behind
         sourceHighlight.hide()
+    }
+
+    // MARK: - Game pointer (T-0021)
+
+    private func startPointerTracking() {
+        guard pointerTimer == nil else { return }
+        pointerTracker.reset()
+        let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.trackPointer() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        pointerTimer = timer
+    }
+
+    private func stopPointerTracking() {
+        pointerTimer?.invalidate()
+        pointerTimer = nil
+        pointerTracker.reset()
+    }
+
+    /// One sample: which translated game text is the mouse resting on?
+    private func trackPointer() {
+        guard AppSettings.shared.panelFollowsGamePointer,
+              let panel = panelWindow, panel.isVisible,
+              !panelData.isCollapsed, !panelData.entries.isEmpty else {
+            if panelData.pointedID != nil { panelData.setPointed(nil) }
+            pointerTracker.reset()
+            return
+        }
+
+        let mouse = NSEvent.mouseLocation
+        // Over the panel itself: hovering its rows (T-0019) wins
+        guard !panel.frame.contains(mouse),
+              let primary = NSScreen.screens.first else { return }
+
+        let point = ScreenCoordinates.cgPoint(fromAppKit: mouse, primaryDisplayHeight: primary.frame.height)
+        let hit = GamePointer.entryID(at: point, in: panelData.entries.map { ($0.id, $0.sourceRect) })
+        let selected = pointerTracker.update(hit: hit, at: point, now: CFAbsoluteTimeGetCurrent())
+        if selected != panelData.pointedID {
+            panelData.setPointed(selected)
+        }
     }
 
     // MARK: - Update

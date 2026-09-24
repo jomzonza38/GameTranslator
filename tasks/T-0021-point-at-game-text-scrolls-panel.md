@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **Status** | READY |
+| **Status** | REVIEW |
 | **Type** | feature |
 | **Priority** | P2 |
 | **Version impact** | minor |
@@ -102,7 +102,89 @@ to scroll through a long panel (e.g. a craft menu with ~20 entries) to find it.
 
 ## Implementation Notes
 
+- **Started while T-0020 is in REVIEW** on the owner's instruction. It relies on
+  T-0020's source rects: until those are confirmed on the owner's screen, the hit test
+  is only as right as the outline.
+- **Mouse position without permission (Req 5, AC-4):** `TranslationPanelController`
+  runs a 0.1 s `Timer` that reads `NSEvent.mouseLocation`, a plain position query.
+  There is **no** event tap, no global event monitor, no `AXIsProcessTrusted`, and no
+  IOHID/Input Monitoring (grep of `Sources/` for those APIs: none). The game keeps
+  receiving every click, hover and key, because nothing is intercepted.
+- **When it runs (Req 8):** the timer exists only while the panel is shown — the panel
+  is shown only while translating in Panel mode, and `hide()` (stop, game closed,
+  Overlay mode, panel closed) invalidates it. Each tick returns at once when the setting
+  is off, the panel is collapsed or has no entries. The per-tick work is a point
+  conversion and a hit test over the panel entries (≤ a few dozen rects), which is
+  negligible next to T-0016's per-frame fingerprint.
+- **Hit test (Req 4, AC-1):** `GamePointer.entryID(at:in:)` (pure). The mouse is
+  converted to CG coordinates with the primary display (`ScreenCoordinates.cgPoint`,
+  matching T-0009), then the entry whose `sourceRect` contains it is found. With
+  overlapping rects, the **smallest** one wins; the same text in two places has two
+  entries (`#0/#1`), and the one under the mouse wins.
+- **Rest delay (Req 1, 2, AC-2):** `PointerRestTracker` (pure). A text is selected only
+  after the mouse stays over it, **within 6 pt**, for 0.4 s; leaving clears the mark
+  after the same delay. Moving (even along one long text) restarts the wait, so a sweep
+  across the menu never selects anything and the panel doesn't jump.
+- **Panel (Req 1, 3):** `TranslationPanelData.pointedID` (cleared when its text leaves the
+  screen, and on `clear()`). The row gets the same brighter background as a T-0019 hover.
+  A `ScrollViewReader` scrolls the entry to the centre (0.2 s animation) only when a new
+  entry is selected, never on deselect, so the list doesn't jump back. When the mouse is
+  over the panel window, samples are ignored and the panel's own hover (T-0019) wins.
+- **Setting (Req 6, AC-3):** `AppSettings.panelFollowsGamePointer`, default on, key
+  `panelFollowsGamePointer`, load rule testable. Toggle in Settings → ตัวเลือกเพิ่มเติม:
+  "เลื่อนแผงคำแปลไปที่ข้อความที่ชี้ในเกม" with an explanation line.
+- **Region mode (Req 7):** entries carry the same `sourceRect` in both modes; nothing
+  mode-specific.
+- New file `Sources/Overlay/GamePointer.swift` (pure helpers, outside *Files / Modules*,
+  like the suggested "small new helper").
+
 ## Result
+
+**Outcome:** PARTIAL — `[test]`/`[code]`/`[build]` criteria pass; AC-5 … AC-8 pending owner (after T-0020 is DONE)
+**Version:** 1.11.31 → 1.11.32
+**Commit:** not committed (owner asked for T-0020 round 2 and T-0021 first, review after)
+
+### Acceptance criteria
+| AC | Result | Evidence |
+|---|---|---|
+| AC-1 | ✅ pass | `GamePointerTests`: inside, outside, overlapping → smallest, duplicate text → the copy under the mouse; AppKit → CG point. |
+| AC-2 | ✅ pass | `testMovingEveryTickNeverSelects` (20 pt steps along one text), `testSweepingAcrossTextsNeverSelects`, `testRestingForTheDelaySelects` (with jitter), `testLeavingClearsAfterTheDelayNotAtOnce`, `testMovingToAnotherTextSwitchesAfterTheDelay`; `PanelPointedEntryTests` (mark cleared when the text is gone / on stop). |
+| AC-3 | ✅ pass | `testSettingDefaultsToOnAndPersists`. |
+| AC-4 | ✅ pass | Only `NSEvent.mouseLocation` + a `Timer`; no AX / event tap / IOHID / global monitor in `Sources/`; timer invalidated in `hide()`; early return when collapsed / setting off. |
+| AC-5…AC-8 | ⏳ pending owner | Steps below. |
+| AC-9 | ✅ pass | `Executed 158 tests, with 0 failures`, `** TEST SUCCEEDED **`, `** BUILD SUCCEEDED **`. |
+
+### Build & test
+```
+Executed 158 tests, with 0 failures (0 unexpected)
+** TEST SUCCEEDED **
+** BUILD SUCCEEDED **
+```
+
+### Changed files (this task only, on top of T-0020 round 2)
+```
+ Resources/Info.plist                              | 1.11.32
+ Sources/Overlay/GamePointer.swift                 | (new) hit test + rest tracker
+ Sources/Overlay/ScreenCoordinates.swift           | cgPoint(fromAppKit:)
+ Sources/Overlay/TranslationPanelController.swift  | pointedID, ScrollViewReader, pointer timer
+ Sources/Models/AppSettings.swift                  | panelFollowsGamePointer
+ Sources/Views/SettingsWindow.swift                | Thai toggle
+ Tests/GamePointerTests.swift                      | (new, 13 tests)
+```
+
+### Manual checks for the owner
+After `./build.sh` (and once T-0020's outline is confirmed on the text):
+- **AC-5:** full-screen Graveyard Keeper, stone cutter menu, Panel mode, panel short
+  enough to scroll → rest the mouse on "A carved piece of stone" → within ~0.5 s the
+  panel scrolls to its entry and marks it; the game's own tooltip still appears.
+- **AC-6:** sweep the mouse quickly across the menu → the panel doesn't jump; only
+  where the mouse stops gets marked.
+- **AC-7:** turn off "เลื่อนแผงคำแปลไปที่ข้อความที่ชี้ในเกม" → pointing does nothing.
+- **AC-8:** with a text marked, press ⌃⌥T; separately quit the game → mark cleared, no
+  crash or freeze.
+
+### Proposed follow-ups
+- none
 
 ---
 
@@ -112,3 +194,5 @@ to scroll through a long panel (e.g. a craft menu with ~20 entries) to find it.
 | Date | Change | Who | Note |
 |---|---|---|---|
 | 2026-09-24 | → READY | Cowork | owner: pointing at the game should bring its message into view |
+| 2026-09-24 | READY → IN_PROGRESS | Claude Code | started on the owner's instruction ("do all") while T-0020 is in REVIEW; stacked, uncommitted |
+| 2026-09-24 | IN_PROGRESS → REVIEW | Claude Code | test/code/build ACs pass; AC-5…AC-8 manual pending owner (after T-0020) |

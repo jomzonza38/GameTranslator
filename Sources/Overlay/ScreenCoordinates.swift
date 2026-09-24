@@ -10,6 +10,11 @@ import AppKit
 /// key window. Using `NSScreen.main` shifts everything when displays differ in height.
 enum ScreenCoordinates {
     /// CG rect → AppKit rect, given the primary display's height
+    /// AppKit point (e.g. `NSEvent.mouseLocation`) → CG point, given the primary display's height
+    static func cgPoint(fromAppKit point: CGPoint, primaryDisplayHeight: CGFloat) -> CGPoint {
+        CGPoint(x: point.x, y: primaryDisplayHeight - point.y)
+    }
+
     static func appKitRect(fromCG rect: CGRect, primaryDisplayHeight: CGFloat) -> CGRect {
         CGRect(
             x: rect.minX,
