@@ -117,7 +117,7 @@ and fires a warm-up request.
 
 **Outcome:** PARTIAL — `[test]`/`[build]` pass; AC-2 passes; AC-3 met by an alternative (see notes, Cowork to confirm); AC-4 pending owner
 **Version:** 1.11.19 → 1.11.20
-**Commit:** not committed (owner asked for T-0010…T-0013 first, review after)
+**Commit:** `0f15d05`
 
 ### Acceptance criteria
 | AC | Result | Evidence |

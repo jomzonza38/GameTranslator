@@ -76,7 +76,7 @@ owner and Cowork use to check real app behaviour.
 
 **Outcome:** PASS — AC-1 and AC-3 pass; AC-2 checked by Claude Code (owner may re-check)
 **Version:** 1.11.22 → 1.11.23
-**Commit:** not committed (owner asked for T-0010…T-0013 first, review after)
+**Commit:** `7c3eced`
 
 ### Acceptance criteria
 | AC | Result | Evidence |

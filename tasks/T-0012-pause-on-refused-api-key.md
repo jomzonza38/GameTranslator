@@ -99,7 +99,7 @@ retrying every ~3 s for as long as text is on screen.
 
 **Outcome:** PARTIAL — all `[test]`/`[code]`/`[build]` criteria pass; AC-3 pending owner
 **Version:** 1.11.21 → 1.11.22
-**Commit:** not committed (owner asked for T-0010…T-0013 first, review after)
+**Commit:** `2cd55eb`
 
 ### Acceptance criteria
 | AC | Result | Evidence |

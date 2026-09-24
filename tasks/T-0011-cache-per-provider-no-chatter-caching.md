@@ -115,7 +115,7 @@ as if it were a translation.
 
 **Outcome:** PARTIAL — all `[test]`/`[code]`/`[build]` criteria pass; AC-4 pending owner
 **Version:** 1.11.20 → 1.11.21
-**Commit:** not committed (owner asked for T-0010…T-0013 first, review after)
+**Commit:** `5beb3ad`
 
 ### Acceptance criteria
 | AC | Result | Evidence |
