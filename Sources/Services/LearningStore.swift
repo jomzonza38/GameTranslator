@@ -14,6 +14,32 @@ struct LearningSentence: Codable, Identifiable, Equatable {
     var isKnown = false
     /// Short Thai explanation from the AI (T-0023); nil until asked
     var explanation: String?
+    /// Quiz answers (T-0024); nil until asked
+    var quiz: QuizStats?
+}
+
+/// How an item has done in the quiz (T-0024)
+struct QuizStats: Codable, Equatable {
+    var correct = 0
+    var wrong = 0
+    /// Right answers in a row (reset by a wrong one)
+    var streak = 0
+    var lastAsked: Date?
+
+    /// Answered right this many times in a row → suggest "จำได้แล้ว"
+    static let knownStreak = 3
+    var suggestsKnown: Bool { streak >= Self.knownStreak }
+
+    mutating func record(correct isCorrect: Bool, at date: Date) {
+        if isCorrect {
+            correct += 1
+            streak += 1
+        } else {
+            wrong += 1
+            streak = 0
+        }
+        lastAsked = date
+    }
 }
 
 /// A word found in translated lines — its base form (T-0022)
@@ -35,6 +61,8 @@ struct LearningWord: Codable, Identifiable, Equatable {
     var meaningSource: String?
     /// Short Thai note from the AI about the word in this game
     var meaningNote: String?
+    /// Quiz answers (T-0024); nil until asked
+    var quiz: QuizStats?
 
     static let maxExamples = 3
 }
@@ -252,6 +280,23 @@ final class LearningStore: ObservableObject {
         change(&data)
         file.games[game] = data
         scheduleSave()
+    }
+
+    // MARK: Quiz (T-0024)
+
+    /// Store one quiz answer for a sentence or word
+    func recordQuizAnswer(itemID: UUID, isWord: Bool, correct: Bool, in game: String, now: Date = Date()) {
+        mutate(game) { data in
+            if isWord, let index = data.words.firstIndex(where: { $0.id == itemID }) {
+                var stats = data.words[index].quiz ?? QuizStats()
+                stats.record(correct: correct, at: now)
+                data.words[index].quiz = stats
+            } else if !isWord, let index = data.sentences.firstIndex(where: { $0.id == itemID }) {
+                var stats = data.sentences[index].quiz ?? QuizStats()
+                stats.record(correct: correct, at: now)
+                data.sentences[index].quiz = stats
+            }
+        }
     }
 
     // MARK: Size limit

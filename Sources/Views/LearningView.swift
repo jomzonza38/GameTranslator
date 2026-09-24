@@ -9,6 +9,7 @@ struct LearningView: View {
     enum Tab: String, CaseIterable, Identifiable {
         case sentences = "ประโยค"
         case words = "คำศัพท์"
+        case quiz = "แบบทดสอบ"
         var id: String { rawValue }
     }
 
@@ -70,9 +71,10 @@ struct LearningView: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .frame(width: 180)
+                .frame(width: 270)
             }
 
+            if tab != .quiz {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
@@ -86,6 +88,7 @@ struct LearningView: View {
 
                 Toggle("ซ่อนที่จำได้แล้ว", isOn: $hideKnown)
                     .toggleStyle(.checkbox)
+            }
             }
         }
         .padding(10)
@@ -127,6 +130,9 @@ struct LearningView: View {
                 }
                 .listStyle(.inset)
             }
+        case .quiz:
+            QuizView(game: game, store: store)
+                .id(game)
         }
     }
 
@@ -149,9 +155,11 @@ struct LearningView: View {
         let shown = tab == .sentences ? filteredSentences(data.sentences).count : filteredWords(data.words).count
         let total = tab == .sentences ? data.sentences.count : data.words.count
         return HStack {
-            Text("แสดง \(shown) จาก \(total) \(tab == .sentences ? "ประโยค" : "คำ")")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            if tab != .quiz {
+                Text("แสดง \(shown) จาก \(total) \(tab == .sentences ? "ประโยค" : "คำ")")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             if tab == .words {
                 lookupControls(words: filteredWords(data.words))
             }
@@ -609,6 +617,297 @@ private struct ChatPane: View {
             Text(turn.text)
                 .font(.caption)
                 .foregroundStyle(.orange)
+        }
+    }
+}
+
+// MARK: - Quiz (T-0024)
+
+/// Multiple-choice quiz for one game. Offline: no request while answering.
+private struct QuizView: View {
+    let game: String
+    @ObservedObject var store: LearningStore
+
+    @State private var count = 10
+    @State private var mode: QuizGenerator.Mode = .mixed
+    @State private var includeKnown = false
+
+    @State private var quiz: QuizGenerator.Quiz?
+    @State private var index = 0
+    @State private var chosen: Int?
+    @State private var score = 0
+    @State private var missed: [QuizGenerator.Question] = []
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        Group {
+            if let quiz {
+                if quiz.questions.isEmpty {
+                    emptyQuiz(quiz)
+                } else if index < quiz.questions.count {
+                    questionView(quiz.questions[index], number: index + 1, total: quiz.questions.count)
+                } else {
+                    finished(total: quiz.questions.count)
+                }
+            } else {
+                setup
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // MARK: Setup
+
+    private var setup: some View {
+        let data = store.data(for: game)
+        let words = QuizGenerator.usableWords(data, includeKnown: includeKnown)
+        let sentences = QuizGenerator.usableSentences(data, includeKnown: includeKnown)
+        let wordsReason = QuizGenerator.unavailableReason(words: words)
+        let sentencesReason = QuizGenerator.unavailableReason(sentences: sentences)
+        let canStart: Bool = {
+            switch mode {
+            case .words: return wordsReason == nil
+            case .sentences: return sentencesReason == nil
+            case .mixed: return wordsReason == nil || sentencesReason == nil
+            }
+        }()
+
+        return Form {
+            Picker("จำนวนข้อ:", selection: $count) {
+                ForEach([10, 20, 30], id: \.self) { Text("\($0) ข้อ").tag($0) }
+            }
+            Picker("แบบ:", selection: $mode) {
+                ForEach(QuizGenerator.Mode.allCases) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            Toggle("รวมรายการที่จำได้แล้ว", isOn: $includeKnown)
+
+            Text("คำศัพท์ที่มีความหมาย \(words.count) คำ · ประโยค \(sentences.count) ประโยค")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            if mode != .sentences, let wordsReason {
+                Text(wordsReason).font(.caption).foregroundStyle(.orange)
+            }
+            if mode != .words, let sentencesReason {
+                Text(sentencesReason).font(.caption).foregroundStyle(.orange)
+            }
+
+            Button("เริ่มทำแบบทดสอบ") { start(onlyItems: nil) }
+                .buttonStyle(.borderedProminent)
+                .disabled(game.isEmpty || !canStart)
+        }
+        .formStyle(.grouped)
+    }
+
+    private func emptyQuiz(_ quiz: QuizGenerator.Quiz) -> some View {
+        VStack(spacing: 10) {
+            Text("ยังสร้างข้อสอบไม่ได้").font(.headline)
+            ForEach(quiz.notes, id: \.self) { Text($0).foregroundStyle(.secondary) }
+            Button("กลับ") { self.quiz = nil }
+        }
+        .padding()
+    }
+
+    // MARK: Question
+
+    private func questionView(_ question: QuizGenerator.Question, number: Int, total: Int) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("ข้อ \(number)/\(total)").font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Text("คะแนน \(score)").font(.caption).foregroundStyle(.secondary)
+            }
+            Text(title(for: question.kind)).font(.callout).foregroundStyle(.secondary)
+            Text(question.prompt)
+                .font(.title2.weight(.semibold))
+                .textSelection(.enabled)
+
+            ForEach(Array(question.choices.enumerated()), id: \.offset) { offset, choice in
+                Button {
+                    answer(offset, question: question)
+                } label: {
+                    HStack {
+                        Text("\(offset + 1).").monospacedDigit()
+                        Text(choice).multilineTextAlignment(.leading)
+                        Spacer()
+                        if chosen != nil, offset == question.correctIndex {
+                            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                        } else if chosen == offset {
+                            Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
+                        }
+                    }
+                    .padding(8)
+                    .background(RoundedRectangle(cornerRadius: 6).fill(background(for: offset, question: question)))
+                }
+                .buttonStyle(.plain)
+                .disabled(chosen != nil)
+            }
+
+            if let chosen {
+                feedback(chosen: chosen, question: question)
+            }
+            Spacer()
+        }
+        .padding(16)
+        .focusable()
+        .focused($focused)
+        .onAppear { focused = true }
+        // 1–4 answer, Return goes on
+        .onKeyPress(keys: ["1", "2", "3", "4"], phases: .down) { press in
+            guard chosen == nil, let digit = press.characters.first?.wholeNumberValue,
+                  (1...question.choices.count).contains(digit) else { return .ignored }
+            answer(digit - 1, question: question)
+            return .handled
+        }
+        .onKeyPress(.return, phases: .down) { _ in
+            guard chosen != nil else { return .ignored }
+            next()
+            return .handled
+        }
+    }
+
+    @ViewBuilder
+    private func feedback(chosen: Int, question: QuizGenerator.Question) -> some View {
+        let right = chosen == question.correctIndex
+        VStack(alignment: .leading, spacing: 6) {
+            Text(right ? "ถูกต้อง ✓" : "ยังไม่ถูก — คำตอบคือ \(question.correctAnswer)")
+                .foregroundStyle(right ? .green : .red)
+            if let example = question.example {
+                Text("ตัวอย่าง: \(example)").font(.caption).foregroundStyle(.secondary)
+            }
+            if suggestsKnown(question) {
+                Button("ตอบถูก \(QuizStats.knownStreak) ครั้งติดแล้ว — ทำเครื่องหมาย จำได้แล้ว") { markKnown(question) }
+                    .controlSize(.small)
+            }
+            Button("ถัดไป (Return)") { next() }
+                .keyboardShortcut(.defaultAction)
+        }
+    }
+
+    // MARK: End
+
+    private func finished(total: Int) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("ได้ \(score) จาก \(total) ข้อ").font(.title2.weight(.semibold))
+                if missed.isEmpty {
+                    Text("ถูกทุกข้อ 🎉").foregroundStyle(.green)
+                } else {
+                    Text("ข้อที่ผิด").font(.headline)
+                    ForEach(missed) { question in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(question.prompt)
+                            Text(question.correctAnswer).font(.callout).foregroundStyle(.secondary)
+                        }
+                    }
+                    Button("ทบทวนข้อที่ผิด") { start(onlyItems: Set(missed.map(\.itemID))) }
+                        .buttonStyle(.borderedProminent)
+                }
+                let suggestions = knownSuggestions()
+                if !suggestions.isEmpty {
+                    Divider()
+                    Text("ตอบถูก \(QuizStats.knownStreak) ครั้งติดแล้ว — จำได้แล้วหรือยัง?").font(.headline)
+                    ForEach(suggestions, id: \.id) { item in
+                        HStack {
+                            Text(item.label)
+                            Spacer()
+                            Button("จำได้แล้ว") { markKnown(id: item.id, isWord: item.isWord) }
+                                .controlSize(.small)
+                        }
+                    }
+                }
+                Button("ทำแบบทดสอบใหม่") { quiz = nil }
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    // MARK: Actions
+
+    private func start(onlyItems: Set<UUID>?) {
+        var random = SystemRandomNumberGenerator()
+        quiz = QuizGenerator.makeQuiz(
+            from: store.data(for: game),
+            count: onlyItems?.count ?? count,
+            mode: mode,
+            includeKnown: includeKnown,
+            onlyItems: onlyItems,
+            using: &random
+        )
+        index = 0
+        chosen = nil
+        score = 0
+        missed = []
+    }
+
+    private func answer(_ choice: Int, question: QuizGenerator.Question) {
+        guard chosen == nil else { return }
+        chosen = choice
+        let right = choice == question.correctIndex
+        if right { score += 1 } else { missed.append(question) }
+        store.recordQuizAnswer(itemID: question.itemID, isWord: question.isWord, correct: right, in: game)
+    }
+
+    private func next() {
+        chosen = nil
+        index += 1
+        focused = true
+    }
+
+    private func title(for kind: QuizGenerator.Kind) -> String {
+        switch kind {
+        case .wordToMeaning: return "คำนี้แปลว่าอะไร?"
+        case .sentenceToTranslation: return "ประโยคนี้แปลว่าอะไร?"
+        case .meaningToWord: return "คำไหนแปลว่า…"
+        }
+    }
+
+    private func background(for offset: Int, question: QuizGenerator.Question) -> Color {
+        guard let chosen else { return Color.secondary.opacity(0.08) }
+        if offset == question.correctIndex { return Color.green.opacity(0.18) }
+        if offset == chosen { return Color.red.opacity(0.18) }
+        return Color.secondary.opacity(0.05)
+    }
+
+    private func suggestsKnown(_ question: QuizGenerator.Question) -> Bool {
+        let data = store.data(for: game)
+        if question.isWord {
+            guard let word = data.words.first(where: { $0.id == question.itemID }) else { return false }
+            return !word.isKnown && (word.quiz?.suggestsKnown ?? false)
+        }
+        guard let sentence = data.sentences.first(where: { $0.id == question.itemID }) else { return false }
+        return !sentence.isKnown && (sentence.quiz?.suggestsKnown ?? false)
+    }
+
+    private func markKnown(_ question: QuizGenerator.Question) {
+        markKnown(id: question.itemID, isWord: question.isWord)
+    }
+
+    private func markKnown(id: UUID, isWord: Bool) {
+        if isWord {
+            store.setKnown(word: id, in: game, true)
+        } else {
+            store.setKnown(sentence: id, in: game, true)
+        }
+    }
+
+    /// Items in this quiz that reached the "3 right in a row" mark and aren't known yet
+    private func knownSuggestions() -> [(id: UUID, isWord: Bool, label: String)] {
+        guard let quiz else { return [] }
+        let data = store.data(for: game)
+        var seen = Set<UUID>()
+        return quiz.questions.compactMap { question in
+            guard seen.insert(question.itemID).inserted else { return nil }
+            if question.isWord, let word = data.words.first(where: { $0.id == question.itemID }),
+               !word.isKnown, word.quiz?.suggestsKnown == true {
+                return (word.id, true, word.word)
+            }
+            if !question.isWord, let sentence = data.sentences.first(where: { $0.id == question.itemID }),
+               !sentence.isKnown, sentence.quiz?.suggestsKnown == true {
+                return (sentence.id, false, sentence.original)
+            }
+            return nil
         }
     }
 }

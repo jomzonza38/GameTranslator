@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **Status** | PLANNED |
+| **Status** | REVIEW |
 | **Type** | feature |
 | **Priority** | P2 |
 | **Version impact** | minor |
@@ -85,7 +85,78 @@ back more often.
 
 ## Implementation Notes
 
+- **Started while PLANNED** on the owner's instruction; stacked on T-0022/T-0023/T-0025
+  (in REVIEW, uncommitted).
+- **`Sources/Services/QuizGenerator.swift`** (new, pure, no network — Req 7):
+  - Usable items: words **with a meaning** and sentences with a translation. Known items
+    are left out unless "รวมรายการที่จำได้แล้ว" is on.
+  - Kinds (Req 2): word → meaning, sentence → translation, meaning → word. For a word
+    question the direction is random.
+  - Distractors (Req 3): other items of the same game and kind; for words, the same part
+    of speech first, then any. Choices are de-duplicated and never contain the right
+    answer twice; it sits at a random position. If a kind has fewer than 4 distinct
+    answers it isn't used, and the reason is returned ("ต้องมีคำที่มีความหมายอย่างน้อย 4 คำ
+    (กด หาความหมาย ในแท็บคำศัพท์)" / "ต้องมีประโยคอย่างน้อย 4 ประโยค"). With 0 items the
+    quiz is empty.
+  - Selection (Req 6): weighted sampling without replacement. Weight = 4 if never asked,
+    else `max(0.2, 1 + 2 × wrong − 1.5 × streak)`, so wrong / never-asked items come first
+    and right streaks push items back.
+  - `SeededRandom` (SplitMix64) for deterministic tests; the app uses the system generator.
+- **Stats (Req 6):** `QuizStats { correct, wrong, streak, lastAsked }` as an optional
+  `quiz` field on sentences and words (older files still load — tested).
+  `LearningStore.recordQuizAnswer` saves one answer; `suggestsKnown` = 3 right in a row.
+- **แบบทดสอบ tab** (Learning window; the search/sort row and list footer are hidden there):
+  - Setup (Req 1): จำนวนข้อ 10/20/30, แบบ คำศัพท์/ประโยค/ผสม, รวมรายการที่จำได้แล้ว (default
+    off), how many usable items, the reason if a kind isn't available; start is disabled
+    when nothing can be asked.
+  - Question (Req 4): "ข้อ N/M", score, prompt, 4 choices numbered 1–4, answered with the
+    mouse or **keys 1–4**. Then green/red, "คำตอบคือ …", the example line for words, and
+    **ถัดไป** (**Return**).
+  - A one-tap "ทำเครื่องหมาย จำได้แล้ว" appears once an item reaches 3 right in a row.
+  - End (Req 5): score, missed items with their answers, **ทบทวนข้อที่ผิด** (a quiz of only the
+    missed items), the "จำได้แล้ว?" suggestions, ทำแบบทดสอบใหม่.
+- It doesn't touch the translation pipeline, and nothing is requested while answering.
+
 ## Result
+
+**Outcome:** PARTIAL — `[test]`/`[build]` criteria pass; AC-5 pending owner
+**Version:** 1.14.0 → 1.15.0
+**Commit:** not committed (owner asked for all of M6 first, review after)
+
+### Acceptance criteria
+| AC | Result | Evidence |
+|---|---|---|
+| AC-1 | ✅ pass | `QuizGeneratorTests.testQuestionsHaveFourDistinctChoicesAndOneRightAnswer` (12 questions: 4 distinct choices, exactly one right, all choices from the same game and kind, right position varies). |
+| AC-2 | ✅ pass | `testTooFewItemsGiveNoQuestionAndAReason` (reasons for words and sentences), `testNoItemsIsAnEmptyQuiz`, `testSentencesOnlyWhenWordsHaveNoMeanings`. |
+| AC-3 | ✅ pass | `testWeakItemsArePickedBeforeWellKnownOnes` (seeded: ≥ 4 of 5 picks are weak/new; weights ordered), `testReviewOnlyAsksTheMissedItems`. |
+| AC-4 | ✅ pass | `QuizStatsPersistenceTests.testAnswerStatsAndKnownSuggestionSurviveSaveAndLoad` (1 wrong + 3 right → streak 3, suggestion, lastAsked; after reload), `testOlderFilesWithoutNewFieldsStillLoad`. |
+| AC-5 | ⏳ pending owner | Steps below. |
+| AC-6 | ✅ pass | `Executed 190 tests, with 0 failures`, `** TEST SUCCEEDED **`, `** BUILD SUCCEEDED **`. |
+
+### Build & test
+```
+Executed 190 tests, with 0 failures (0 unexpected)
+** TEST SUCCEEDED **
+** BUILD SUCCEEDED **
+```
+
+### Changed files (this task only, on top of T-0025)
+```
+ Resources/Info.plist                    | 1.15.0
+ Sources/Services/QuizGenerator.swift    | (new) generator, weighting, SeededRandom
+ Sources/Services/LearningStore.swift    | QuizStats, recordQuizAnswer
+ Sources/Views/LearningView.swift        | แบบทดสอบ tab (QuizView)
+ Tests/QuizGeneratorTests.swift          | (new, 8 tests)
+```
+
+### Manual checks for the owner
+After `./build.sh`, once a game has meanings (T-0023):
+- **AC-5:** Learning → **แบบทดสอบ** → 10 ข้อ, ผสม → เริ่ม → answer with keys 1–4 and Return →
+  green/red feedback with the answer each time, the score at the end; **ทบทวนข้อที่ผิด** asks
+  only the missed ones.
+
+### Proposed follow-ups
+- none
 
 ---
 
@@ -95,3 +166,5 @@ back more often.
 | Date | Change | Who | Note |
 |---|---|---|---|
 | 2026-09-24 | → PLANNED | Cowork | created; READY when T-0023 is DONE |
+| 2026-09-24 | PLANNED → IN_PROGRESS | Claude Code | started on the owner's instruction ("do all of M6") while T-0023 is in REVIEW; stacked, uncommitted |
+| 2026-09-24 | IN_PROGRESS → REVIEW | Claude Code | test/build ACs pass; AC-5 manual pending owner |
