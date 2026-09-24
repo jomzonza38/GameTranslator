@@ -4,12 +4,14 @@ Index of all tasks. The **Status line inside each task file is the source of
 truth**; whoever changes a status updates this row in the same step.
 Lifecycle and who may set each status: `WORKFLOW.md` §3.
 
-**Next ID:** T-0018
+**Next ID:** T-0020
 
 ## Active
 
 | ID | Title | Status | Priority | Depends on | Next step by |
 |---|---|---|---|---|---|
+| [T-0018](T-0018-panel-shows-source-thumbnail.md) | In full-screen mode, each panel entry shows where its text came from | READY | P2 | — | Claude Code |
+| [T-0019](T-0019-hover-panel-entry-highlights-source.md) | Pointing at a panel entry highlights its text in the game | READY | P2 | T-0018 | Claude Code |
 
 ## Closed
 
