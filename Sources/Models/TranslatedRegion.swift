@@ -22,6 +22,8 @@ struct TranslatedRegion: Identifiable {
     let regionName: String?
     /// ID of the capture region this text belongs to (nil = full-screen)
     let regionID: UUID?
+    /// Picture of the original text as it looks in the game (panel, full-screen mode)
+    let sourceThumbnail: CGImage?
 
     init(
         originalText: String,
@@ -31,7 +33,8 @@ struct TranslatedRegion: Identifiable {
         isPending: Bool = false,
         regionColor: RegionColor? = nil,
         regionName: String? = nil,
-        regionID: UUID? = nil
+        regionID: UUID? = nil,
+        sourceThumbnail: CGImage? = nil
     ) {
         self.id = UUID()
         self.originalText = originalText
@@ -43,6 +46,7 @@ struct TranslatedRegion: Identifiable {
         self.regionColor = regionColor
         self.regionName = regionName
         self.regionID = regionID
+        self.sourceThumbnail = sourceThumbnail
     }
 
     /// Create a copy with updated translation
@@ -55,7 +59,8 @@ struct TranslatedRegion: Identifiable {
             isPending: false,
             regionColor: regionColor,
             regionName: regionName,
-            regionID: regionID
+            regionID: regionID,
+            sourceThumbnail: sourceThumbnail
         )
     }
 
@@ -69,7 +74,23 @@ struct TranslatedRegion: Identifiable {
             isPending: isPending,
             regionColor: regionColor,
             regionName: regionName,
-            regionID: regionID
+            regionID: regionID,
+            sourceThumbnail: sourceThumbnail
+        )
+    }
+
+    /// Create a copy with a picture of the original text
+    func withSourceThumbnail(_ thumbnail: CGImage?) -> TranslatedRegion {
+        TranslatedRegion(
+            originalText: originalText,
+            translatedText: translatedText,
+            screenRect: screenRect,
+            fontSize: fontSize,
+            isPending: isPending,
+            regionColor: regionColor,
+            regionName: regionName,
+            regionID: regionID,
+            sourceThumbnail: thumbnail
         )
     }
 }

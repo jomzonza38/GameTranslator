@@ -13,6 +13,8 @@ final class TranslationPanelData: ObservableObject {
         let translated: String
         let regionColor: RegionColor?
         let regionName: String?
+        /// Picture of the original text (full-screen mode only)
+        let thumbnail: CGImage?
     }
 
     @Published var entries: [Entry] = []
@@ -28,7 +30,8 @@ final class TranslationPanelData: ObservableObject {
                 original: $0.originalText,
                 translated: $0.translatedText,
                 regionColor: $0.regionColor,
-                regionName: $0.regionName
+                regionName: $0.regionName,
+                thumbnail: $0.sourceThumbnail
             )
         }
     }
@@ -320,6 +323,21 @@ struct TranslationPanelContent: View {
                         .font(.system(size: 9, weight: .semibold))
                         .foregroundColor(Color(nsColor: regionColor.nsColor).opacity(0.8))
                         .padding(.bottom, 1)
+                }
+
+                // Picture of the original text in the game (full-screen mode)
+                if entry.regionColor == nil, settings.showSourceThumbnails, let thumbnail = entry.thumbnail {
+                    Image(decorative: thumbnail, scale: 2)
+                        .resizable()
+                        .interpolation(.high)
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxHeight: 24, alignment: .leading)
+                        .clipShape(RoundedRectangle(cornerRadius: 3))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 3)
+                                .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
+                        )
+                        .padding(.bottom, 2)
                 }
 
                 // Thai translation

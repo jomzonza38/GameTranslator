@@ -44,6 +44,9 @@ final class PipelineCoordinator: ObservableObject {
     private var lastFrame: CapturedFrame?
     /// Skips OCR for frames whose pixels were processed recently (T-0016)
     private var frameFilter = FrameChangeFilter()
+    /// Pictures of the original texts on screen, by source text (panel, full-screen
+    /// mode). Made once when a text is first shown translated, dropped when it leaves.
+    private var sourceThumbnails: [String: CGImage] = [:]
     /// On-screen text is waiting to become stable, which needs another run of the
     /// same pixels — so identical frames must not be skipped until it is translated
     private var isWaitingForStableText = false
@@ -104,6 +107,13 @@ final class PipelineCoordinator: ObservableObject {
         // Game language or glossary edited while running: on-screen text must be
         // translated again even if the game window doesn't change
         settings.$sourceLanguage
+            .dropFirst()
+            .sink { [weak self] _ in
+                Task { @MainActor in self?.scheduleRerun(after: Self.rerunSoon) }
+            }
+            .store(in: &cancellables)
+        // Thumbnails switched on/off: redraw the panel even on a static screen
+        settings.$showSourceThumbnails
             .dropFirst()
             .sink { [weak self] _ in
                 Task { @MainActor in self?.scheduleRerun(after: Self.rerunSoon) }
@@ -232,6 +242,7 @@ final class PipelineCoordinator: ObservableObject {
         lastFrame = nil
         frameFilter.reset()
         isWaitingForStableText = false
+        sourceThumbnails.removeAll()
 
         await screenCapture.stopCapture()
         overlayController.hide()
@@ -279,6 +290,8 @@ final class PipelineCoordinator: ObservableObject {
             panelController.show(near: window.frame)
             panelController.updateRegions(currentRegions)
         }
+        // Thumbnails are only made in Panel mode — make them for what is on screen now
+        scheduleRerun(after: Self.rerunSoon)
     }
 
     // MARK: - Multi-Region Management
@@ -588,7 +601,11 @@ final class PipelineCoordinator: ObservableObject {
             }
 
             // Step 5: Resolve overlapping regions — push colliding boxes down
-            let resolvedRegions = RegionLayout.resolveOverlaps(allTranslatedRegions, options: layoutOptions)
+            let resolvedRegions = attachSourceThumbnails(
+                to: RegionLayout.resolveOverlaps(allTranslatedRegions, options: layoutOptions),
+                works: works,
+                image: image
+            )
 
             // Step 6: ALWAYS update display (overlay or panel)
             currentRegions = resolvedRegions
@@ -825,6 +842,37 @@ final class PipelineCoordinator: ObservableObject {
         }
         state.staleTranslations = state.staleTranslations.filter { $0.value.expiry > now }
         state.failedAt = state.failedAt.filter { now - $0.value < 60 }
+    }
+
+    // MARK: - Source thumbnails (T-0018)
+
+    /// Panel + full-screen mode: give each translated text a picture of its original
+    /// pixels. A picture is cut only the first time a text is shown translated —
+    /// unchanged texts reuse theirs, so a static screen costs nothing extra.
+    private func attachSourceThumbnails(
+        to regions: [TranslatedRegion],
+        works: [RegionFrameWork],
+        image: CGImage
+    ) -> [TranslatedRegion] {
+        guard settings.displayMode == .panel,
+              settings.showSourceThumbnails,
+              settings.captureRegions.isEmpty,
+              let work = works.first(where: { $0.regionID == nil }) else {
+            sourceThumbnails.removeAll()
+            return regions
+        }
+
+        let onScreen = Set(work.currentTexts.map(\.text))
+        sourceThumbnails = sourceThumbnails.filter { onScreen.contains($0.key) }
+
+        for detected in work.currentTexts
+        where sourceThumbnails[detected.text] == nil && work.state.translation(for: detected.text) != nil {
+            sourceThumbnails[detected.text] = SourceThumbnail.make(from: image, box: detected.boundingBox)
+        }
+
+        return regions.map { region in
+            region.regionID == nil ? region.withSourceThumbnail(sourceThumbnails[region.originalText]) : region
+        }
     }
 
     // MARK: - Layout

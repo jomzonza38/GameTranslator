@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **Status** | READY |
+| **Status** | REVIEW |
 | **Type** | feature |
 | **Priority** | P2 |
 | **Version impact** | minor |
@@ -99,7 +99,91 @@ the original text as it looks in the game, so the player can match it at a glanc
 
 ## Implementation Notes
 
+- **Where the picture comes from (Req 1, 2):** the same `CGImage` that the OCR read in
+  this pipeline run, cut at the text's `DetectedText.boundingBox`. After line merging,
+  that box is the merged block. `OCRService` produces normalized boxes with a
+  **top-left** origin relative to the whole captured image (region crops are mapped
+  back), and `CGImage.cropping(to:)` also uses top-left pixel coordinates. So the
+  mapping is `box × image size`, with no flip. The captured image is always 2× the
+  window size, independent of which display the game is on or its scale, so Retina,
+  non-Retina and secondary displays all use the same maths.
+- **New `SourceThumbnail`** (pure, in a new file `Sources/Services/SourceThumbnail.swift`,
+  outside *Files / Modules*, because it serves the pipeline and is unit-tested):
+  - `pixelRect(for:imageWidth:imageHeight:padding:)`: 4 px padding, `.integral`,
+    clamped inside the image, nil when empty.
+  - `scaledSize`: at most 560×48 px (≈ 280×24 pt shown at scale 2), never enlarged.
+  - `make(from:box:)`: crops **and copies into a small bitmap**. `cropping(to:)` alone
+    would keep the whole ~20 MB frame alive per thumbnail.
+- **When pictures are cut (AC-3, Req 6):** `PipelineCoordinator.attachSourceThumbnails`
+  runs after `resolveOverlaps`, **only** in Panel mode + full-screen (no regions) +
+  setting on. It cuts a picture only for an on-screen text that is translated and
+  **has no picture yet**. Unchanged texts reuse theirs; a changed text is a new key →
+  new picture (Req 3). Pictures of texts that left the screen are dropped every run,
+  and all are dropped on stop, in region/overlay mode or with the setting off. A static
+  screen still skips whole pipeline runs (T-0016), so it costs nothing extra.
+- **Carried to the panel:** `TranslatedRegion.sourceThumbnail` (+ `withSourceThumbnail`;
+  the existing copy helpers keep it) → `TranslationPanelData.Entry.thumbnail` → shown
+  above the Thai text in `translationRow`, max 24 pt tall, rounded, thin border. It is
+  shown only for entries without a region colour and while the setting is on.
+- **Region mode (Req 4):** no pictures are made (`captureRegions` not empty), and the
+  row view shows a picture only when `regionColor == nil`, so region rows are exactly
+  as before.
+- **Setting (Req 5):** `AppSettings.showSourceThumbnails`, default **on**, persisted
+  under `showSourceThumbnails`. The load rule is `AppSettings.loadShowSourceThumbnails(_:)`
+  so it can be tested with a separate `UserDefaults` suite. The toggle sits in Settings →
+  Display → *ตัวเลือกเพิ่มเติม*: "แสดงภาพข้อความต้นฉบับในแผงคำแปล", with an explanation line.
+- **Static screen niceties:** switching Overlay → Panel, or toggling the setting,
+  schedules one re-run (T-0015 mechanism), so pictures appear without waiting for the
+  screen to change.
+
 ## Result
+
+**Outcome:** PARTIAL — `[test]`/`[code]`/`[build]` criteria pass; AC-4 … AC-7 pending owner
+**Version:** 1.11.27 → 1.11.28
+**Commit:** not committed (owner asked for T-0018 and T-0019 first, review after)
+
+### Acceptance criteria
+| AC | Result | Evidence |
+|---|---|---|
+| AC-1 | ✅ pass | `SourceThumbnailTests`: box → pixels with top-left origin on a 2000×1000 (2×) image, padding, clamping at the edge, box outside → nil, size cap, and a real crop that lands on the black block (not the white background). |
+| AC-2 | ✅ pass | `testThumbnailSettingDefaultsToOnAndPersists` (fresh `UserDefaults` suite: default on, off remembered). |
+| AC-3 | ✅ pass | `attachSourceThumbnails`: `where sourceThumbnails[detected.text] == nil` — no crop for texts that already have a picture; guard returns early in region/overlay mode; row view unchanged when `regionColor != nil`. |
+| AC-4…AC-7 | ⏳ pending owner | Steps below. |
+| AC-8 | ✅ pass | `Executed 124 tests, with 0 failures`, `** TEST SUCCEEDED **`, `** BUILD SUCCEEDED **`. |
+
+### Build & test
+```
+Executed 124 tests, with 0 failures (0 unexpected)
+** TEST SUCCEEDED **
+** BUILD SUCCEEDED **
+```
+
+### Changed files
+```
+ Resources/Info.plist                              | 1.11.28
+ Sources/Services/SourceThumbnail.swift            | (new) crop maths + small copy
+ Sources/Models/TranslatedRegion.swift             | sourceThumbnail
+ Sources/Services/PipelineCoordinator.swift        | attachSourceThumbnails, cache, re-run on mode/setting change
+ Sources/Overlay/TranslationPanelController.swift  | Entry.thumbnail, picture in translationRow
+ Sources/Models/AppSettings.swift                  | showSourceThumbnails (default on)
+ Sources/Views/SettingsWindow.swift                | Thai toggle
+ Tests/SourceThumbnailTests.swift                  | (new, 7 tests)
+```
+
+### Manual checks for the owner
+After `./build.sh`:
+- **AC-4:** remove all regions, Panel mode, translate Graveyard Keeper (or any game)
+  with a dialog and a tooltip visible → each entry shows a picture of its own English
+  text; hovering a new tooltip in the game adds an entry with that tooltip's picture.
+- **AC-5:** Settings → ตัวเลือกเพิ่มเติม → turn off "แสดงภาพข้อความต้นฉบับในแผงคำแปล" →
+  rows look as before (no picture). Turn it back on → pictures return.
+- **AC-6:** with regions defined, Panel mode → rows unchanged (colour bar + region
+  name, no picture).
+- **AC-7:** static game screen with text, full-screen Panel mode, 1 minute → CPU about
+  the same as v1.11.27 (use the `top` command from T-0016).
+
+### Proposed follow-ups
+- none
 
 ---
 
@@ -109,3 +193,5 @@ the original text as it looks in the game, so the player can match it at a glanc
 | Date | Change | Who | Note |
 |---|---|---|---|
 | 2026-09-24 | → READY | Cowork | owner: can't tell where each full-screen translation came from (Graveyard Keeper) |
+| 2026-09-24 | READY → IN_PROGRESS | Claude Code | started (owner: do T-0018 and T-0019, review after) |
+| 2026-09-24 | IN_PROGRESS → REVIEW | Claude Code | test/code/build ACs pass; AC-4…AC-7 manual pending owner |

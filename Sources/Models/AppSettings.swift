@@ -247,6 +247,18 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(showWelcomeOnLaunch, forKey: "showWelcomeOnLaunch") }
     }
 
+    /// Panel (full-screen mode): show a picture of each text's original pixels (T-0018)
+    @Published var showSourceThumbnails: Bool {
+        didSet { defaults.set(showSourceThumbnails, forKey: Self.showSourceThumbnailsKey) }
+    }
+
+    static let showSourceThumbnailsKey = "showSourceThumbnails"
+
+    /// Stored value, on by default
+    static func loadShowSourceThumbnails(_ defaults: UserDefaults) -> Bool {
+        defaults.object(forKey: showSourceThumbnailsKey) as? Bool ?? true
+    }
+
     @Published var showOriginalText: Bool {
         didSet { defaults.set(showOriginalText, forKey: "showOriginalText") }
     }
@@ -337,6 +349,7 @@ final class AppSettings: ObservableObject {
         self.ocrAccuracy = OCRAccuracy(rawValue: defaults.string(forKey: "ocrAccuracy") ?? "") ?? .fast
         self.sourceLanguage = SourceLanguage(rawValue: defaults.string(forKey: "sourceLanguage") ?? "") ?? .english
         self.showOriginalText = defaults.object(forKey: "showOriginalText") as? Bool ?? false
+        self.showSourceThumbnails = Self.loadShowSourceThumbnails(defaults)
         self.showWelcomeOnLaunch = defaults.object(forKey: "showWelcomeOnLaunch") as? Bool ?? true
 
         let modeRaw = defaults.string(forKey: "displayMode") ?? DisplayMode.overlay.rawValue

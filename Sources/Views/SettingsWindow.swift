@@ -407,6 +407,12 @@ private struct OverlaySettingsTab: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
+                Toggle("แสดงภาพข้อความต้นฉบับในแผงคำแปล", isOn: $settings.showSourceThumbnails)
+
+                Text("โหมดแผงคำแปล แบบแปลทั้งหน้าต่าง: แต่ละคำแปลมีภาพข้อความจากเกมให้ดูว่ามาจากตรงไหน")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
                 Toggle("แสดงหน้าต้อนรับตอนเปิดแอป", isOn: $settings.showWelcomeOnLaunch)
 
                 Text("บอกว่าแอปทำงานแล้วและไอคอนอยู่ตรงไหนบนแถบเมนู")
