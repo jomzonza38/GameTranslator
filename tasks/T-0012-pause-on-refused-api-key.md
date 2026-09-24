@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **Status** | PLANNED |
+| **Status** | REVIEW |
 | **Type** | fix |
 | **Priority** | P2 |
 | **Version impact** | patch |
@@ -69,7 +69,72 @@ retrying every ~3 s for as long as text is on screen.
 
 ## Implementation Notes
 
+- **Started while PLANNED** on the owner's instruction ("do all tasks, review after").
+  It builds on T-0010, which is in REVIEW and uncommitted, not DONE.
+- **Pause decision (Req 1, Req 4):** new `TranslationRefusal` in
+  `LLMChatProvider.swift`, next to `BatchFallback`:
+  - `kind(of:)` → `.keyRefused` for `missingApiKey` and `HTTP 401`/`HTTP 403` messages
+    (Google Cloud and DeepL already map 401/403 to `missingApiKey`); `.quotaUsedUp` for
+    `quotaExceeded` (DeepL 456, the DeepL Free monthly limit).
+  - Everything else — 429, network errors, timeouts, 5xx, invalid replies,
+    cancellation — returns `nil`, so the existing 3 s per-text back-off still applies.
+  - `BatchFallback` is unchanged. I didn't make it call the new type: its own list
+    already rejects the same errors, and leaving it alone keeps T-0008 behaviour exact.
+- **Pipeline (AC-2):** `PipelineCoordinator.isTranslationPaused`.
+  - Set in `translatePending`'s `catch` when `pauseMessage(...)` is non-nil. `lastError`
+    becomes the Thai message and the log says `⏸ Translation paused…`.
+  - While paused, `translatePending` returns **before** any request (after collecting
+    texts). Capture, OCR, glossary exact matches and already-cached lines keep working,
+    so the overlay stays as it is (Req 2).
+- **Resume (Req 3):** `updateProvider()` clears the pause, the error and the per-text
+  `failedAt` back-off, so the new key is tried at once, and logs `▶︎ Translation
+  resumed`. Settings calls it when the provider is picked and when a key is saved
+  (T-0010: once, when editing ends). A new start also clears the pause.
+- **Menu text (Req 2)**, shown as `⚠️ …` (menu refreshes on open, T-0006):
+  - key: `หยุดแปลชั่วคราว: <provider> ไม่รับ API Key — แก้ Key ใน ⚙️ ตั้งค่า แล้วจะแปลต่อเอง`
+  - quota: `หยุดแปลชั่วคราว: <provider> ใช้โควต้าหมดแล้ว — เปลี่ยน provider ใน ⚙️ ตั้งค่า แล้วจะแปลต่อเอง`
+  - Google Free (no key) 403: `หยุดแปลชั่วคราว: Google Translate (Free) ปฏิเสธคำขอ — ลองเปลี่ยน provider ใน ⚙️ ตั้งค่า`
+
 ## Result
+
+**Outcome:** PARTIAL — all `[test]`/`[code]`/`[build]` criteria pass; AC-3 pending owner
+**Version:** 1.11.21 → 1.11.22
+**Commit:** not committed (owner asked for T-0010…T-0013 first, review after)
+
+### Acceptance criteria
+| AC | Result | Evidence |
+|---|---|---|
+| AC-1 | ✅ pass | `TranslationRefusalTests`: 401/403/missing key/quota → pause; 429, 500, 503, timeout, offline, invalid response, cancel → no pause; message texts. |
+| AC-2 | ✅ pass | `translatePending`: `guard !isTranslationPaused else { return }` before the only `translationService.translateBatch` call; `updateProvider()` clears the pause. |
+| AC-3 | ⏳ pending owner | Steps below. |
+| AC-4 | ✅ pass | `Executed 92 tests, with 0 failures`, `** TEST SUCCEEDED **`, `** BUILD SUCCEEDED **`. |
+
+### Build & test
+```
+Executed 92 tests, with 0 failures (0 unexpected) in 0.733 (0.778) seconds
+** TEST SUCCEEDED **
+** BUILD SUCCEEDED **
+```
+
+### Changed files (this task only, on top of T-0011)
+```
+ Resources/Info.plist                        | 1.11.22
+ Sources/Providers/LLMChatProvider.swift     | TranslationRefusal
+ Sources/Services/TranslationService.swift   | currentProviderUsesApiKey
+ Sources/Services/PipelineCoordinator.swift  | pause on refusal, resume in updateProvider
+ Tests/TranslationRefusalTests.swift         | (new, 3 tests)
+```
+
+### Manual checks for the owner
+**AC-3** — after `./build.sh`:
+1. Settings → Claude Haiku → key `sk-test` (press Return). Translate a game for 30 s.
+   Expected: the log has **one** `HTTP 401` line followed by `⏸ Translation paused…`,
+   not one every 3 s. The menu shows `⚠️ หยุดแปลชั่วคราว: Claude Haiku ไม่รับ API Key — …`.
+2. Enter the real key (Return or wait 1 s). Expected: log `▶︎ Translation resumed`,
+   translations appear without restarting, and the ⚠️ line is gone.
+
+### Proposed follow-ups
+- none
 
 ---
 
@@ -79,3 +144,5 @@ retrying every ~3 s for as long as text is on screen.
 | Date | Change | Who | Note |
 |---|---|---|---|
 | 2026-09-24 | → PLANNED | Cowork | created for M3; READY when T-0010 is DONE |
+| 2026-09-24 | PLANNED → IN_PROGRESS | Claude Code | started on owner's instruction ("do all tasks, review after") while T-0010 is still in REVIEW; stacked on T-0010/T-0011, uncommitted |
+| 2026-09-24 | IN_PROGRESS → REVIEW | Claude Code | test/code/build ACs pass; AC-3 manual pending owner |

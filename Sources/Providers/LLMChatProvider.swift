@@ -84,6 +84,45 @@ extension LLMChatProvider {
     }
 }
 
+/// Errors that retrying can't fix until the user changes the API key or provider:
+/// the key was refused (HTTP 401/403, missing key) or the quota is used up.
+/// The pipeline pauses requests on these instead of retrying every few seconds.
+enum TranslationRefusal {
+    enum Kind: Equatable {
+        case keyRefused
+        case quotaUsedUp
+    }
+
+    static func kind(of error: Error) -> Kind? {
+        guard let translationError = error as? TranslationError else { return nil }
+        switch translationError {
+        case .missingApiKey:
+            return .keyRefused
+        case .quotaExceeded:
+            return .quotaUsedUp
+        case .translationFailed(let message):
+            // Providers report HTTP errors as "HTTP <status>…"
+            return message.hasPrefix("HTTP 401") || message.hasPrefix("HTTP 403") ? .keyRefused : nil
+        default:
+            return nil
+        }
+    }
+
+    /// Thai text for the menu while paused, or nil when `error` is not a refusal
+    static func pauseMessage(for error: Error, provider: String, usesApiKey: Bool) -> String? {
+        switch kind(of: error) {
+        case .keyRefused?:
+            return usesApiKey
+                ? "หยุดแปลชั่วคราว: \(provider) ไม่รับ API Key — แก้ Key ใน ⚙️ ตั้งค่า แล้วจะแปลต่อเอง"
+                : "หยุดแปลชั่วคราว: \(provider) ปฏิเสธคำขอ — ลองเปลี่ยน provider ใน ⚙️ ตั้งค่า"
+        case .quotaUsedUp?:
+            return "หยุดแปลชั่วคราว: \(provider) ใช้โควต้าหมดแล้ว — เปลี่ยน provider ใน ⚙️ ตั้งค่า แล้วจะแปลต่อเอง"
+        case nil:
+            return nil
+        }
+    }
+}
+
 /// When a failed batch request may be retried as one request per line (used by
 /// LLMChatProvider and GoogleFreeProvider)
 enum BatchFallback {

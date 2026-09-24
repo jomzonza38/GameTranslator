@@ -58,6 +58,11 @@ final class PipelineCoordinator: ObservableObject {
     /// known yet). When it changes, visible text is translated again.
     private var translationScope: String?
 
+    /// Set when the provider refused the API key or the quota is used up: no
+    /// translation requests until the key or provider changes (updateProvider) or a
+    /// new session starts. Capture and overlay keep running.
+    private var isTranslationPaused = false
+
     private var cancellables = Set<AnyCancellable>()
 
     // MARK: - Init
@@ -112,6 +117,7 @@ final class PipelineCoordinator: ObservableObject {
         globalState.reset()
         regionStates.removeAll()
         translationScope = nil
+        isTranslationPaused = false
 
         // Initialize per-region states
         for region in settings.captureRegions {
@@ -201,8 +207,20 @@ final class PipelineCoordinator: ObservableObject {
         selectedWindow = nil
     }
 
+    /// Called when the provider or its API key changes (and at start)
     func updateProvider() {
         translationService.switchProvider(to: settings.selectedProvider)
+
+        // A new key or provider is the user's fix for a refused key / used-up quota
+        if isTranslationPaused {
+            isTranslationPaused = false
+            lastError = nil
+            for state in regionStates.values {
+                state.failedAt.removeAll()
+            }
+            globalState.failedAt.removeAll()
+            GameLog.log("▶︎ Translation resumed (\(translationService.currentProviderName))")
+        }
     }
 
     /// Switch between overlay and panel display modes while running
@@ -585,6 +603,9 @@ final class PipelineCoordinator: ObservableObject {
         }
         guard !texts.isEmpty else { return }
 
+        // Paused after a refused key / used-up quota: no request until the user fixes it
+        guard !isTranslationPaused else { return }
+
         let labels = works.filter { !$0.textsToTranslate.isEmpty }.map { $0.regionName ?? "full-screen" }
         GameLog.log("Translating \(texts.count) texts via \(translationService.currentProviderName) [\(labels.joined(separator: ", "))]...")
 
@@ -638,6 +659,17 @@ final class PipelineCoordinator: ObservableObject {
             }
             GameLog.log("\u{2717} Translation error: \(error.localizedDescription)")
             lastError = error.localizedDescription
+
+            // Key refused / quota used up: retrying every few seconds can't help
+            if let message = TranslationRefusal.pauseMessage(
+                for: error,
+                provider: translationService.currentProviderName,
+                usesApiKey: translationService.currentProviderUsesApiKey
+            ) {
+                isTranslationPaused = true
+                lastError = message
+                GameLog.log("⏸ Translation paused until the API key or provider changes")
+            }
         }
     }
 

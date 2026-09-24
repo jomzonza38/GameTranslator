@@ -159,4 +159,9 @@ final class TranslationService: @unchecked Sendable {
     var currentProviderName: String {
         provider.name
     }
+
+    /// Whether the current provider needs an API key
+    var currentProviderUsesApiKey: Bool {
+        provider.requiresApiKey
+    }
 }
