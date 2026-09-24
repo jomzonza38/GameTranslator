@@ -29,7 +29,7 @@ From the owner — every task must keep these (details in `CLAUDE.md`):
 | M3 — Providers & settings hygiene | Keys saved cleanly, right cache per provider, no endless retries on a refused key, clean test logs | done 2026-09-24 | T-0010 … T-0015 (T-0012 corrected by T-0015) |
 | M4 — Performance & first use | Near-idle CPU on a static screen; no silent minute-long wait on the first OCR | done 2026-09-24 | T-0016, T-0017 |
 | M5 — Know where each translation came from | When the whole window is translated (text in many places, e.g. Graveyard Keeper), the player can tell which translation belongs to which text | done 2026-09-24 | T-0018, T-0019 (→ T-0020), T-0021 |
-| M6 — Learn the language from the games you play | Words and sentences the app translated are kept per game; the player sees what each word/sentence means, practises with a multiple-choice quiz and can ask an AI why a line was translated that way | active (planned 2026-09-24) | T-0022 → T-0023 → T-0024, T-0025 |
+| M6 — Learn the language from the games you play | Words and sentences the app translated are kept per game; the player sees what each word/sentence means, practises with a multiple-choice quiz and can ask an AI why a line was translated that way | done 2026-09-24 (fix T-0026 open) | T-0022 … T-0025, T-0026 |
 
 ## Backlog (not yet tasks)
 
@@ -119,3 +119,14 @@ frame-to-frame tracking (`TextTracker`), stability gate for typewriter text, reg
 Owner decisions: learning data saved permanently per game; word meanings from AI when an
 LLM key exists, else Google Free; the chat AI is chosen in Settings. Tasks: T-0022 … T-0025.
 - Later, if wanted: spaced repetition across days, export to Anki/CSV, text-to-speech.
+- From the M6 audit (low, not yet tasks):
+  - `LearningStore.shared` loads `learning.json` synchronously on the main actor at the first
+    translation — preload off the main actor at launch if the file grows large.
+  - The open Learning window re-filters and re-sorts the whole list on every new translation.
+  - หยุด then หาความหมาย again: the old task's `defer` clears `isWorking` while the new batch
+    runs; opening another word during a batch silently skips its auto lookup.
+  - Changing the game picker during a quiz keeps the old questions and records answers into
+    the new game.
+  - Editing the key in "AI สำหรับแชทเรียนรู้" calls `pipeline.updateProvider()` even when it
+    isn't the translation provider's key.
+  - A word's chat sends the word as "Game line" without its example sentence.
