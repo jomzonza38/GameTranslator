@@ -28,7 +28,7 @@ From the owner — every task must keep these (details in `CLAUDE.md`):
 | M2 — Reliability & UX | Errors visible to the user, no request storms, correct placement on every display | done 2026-09-24 | T-0006 … T-0009 |
 | M3 — Providers & settings hygiene | Keys saved cleanly, right cache per provider, no endless retries on a refused key, clean test logs | done 2026-09-24 | T-0010 … T-0015 (T-0012 corrected by T-0015) |
 | M4 — Performance & first use | Near-idle CPU on a static screen; no silent minute-long wait on the first OCR | done 2026-09-24 | T-0016, T-0017 |
-| M5 — Know where each translation came from | When the whole window is translated (text in many places, e.g. Graveyard Keeper), the player can tell which translation belongs to which text | active | T-0018, T-0019 (→ T-0020), T-0021 |
+| M5 — Know where each translation came from | When the whole window is translated (text in many places, e.g. Graveyard Keeper), the player can tell which translation belongs to which text | done 2026-09-24 | T-0018, T-0019 (→ T-0020), T-0021 |
 
 ## Backlog (not yet tasks)
 
@@ -101,6 +101,12 @@ frame-to-frame tracking (`TextTracker`), stability gate for typewriter text, reg
   same text shown twice gets its own picture and the hover never jumps between the copies.
 - From owner's test 2026-09-24: number-only texts ("15", "10", "7/1" read as "71") fill the panel
   and get sent for translation. Skip or pass through texts with no letters.
+- From T-0020 review: a resize `Task` still awaiting `updateConfiguration` when translation is
+  stopped and restarted can write its size into the new session — guard with the stream identity.
+- **CPU bursts in a real game** (owner, M5 check): top 12:29:13–38, v1.11.31, Graveyard Keeper: 0.0 / 28.4 / 57.0 / 31.4 / 7.9 / 7.1 % — settles ≤ 10 % (T-0016 goal), bursts of 30–57 % for ~15 s. Find what
+  runs during a burst (log: OCR count/time per run, frame changes, capture resizes) before deciding a
+  fix. Related: T-0016 follow-up about games whose background keeps moving; round 2 of T-0020 also
+  made full-screen frames ~10 % larger (no longer scaled down).
 - Numbered badges (①②③) on the game next to each text, same number in the panel.
   Decide after T-0018/T-0019 whether it is still needed.
 - Panel order: newest text first with a "ใหม่" marker, instead of top-to-bottom

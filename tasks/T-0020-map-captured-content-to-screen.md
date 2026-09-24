@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **Status** | REVIEW |
+| **Status** | DONE |
 | **Type** | fix |
 | **Priority** | P1 |
 | **Version impact** | patch |
@@ -210,7 +210,7 @@ Thumbnails (T-0018) are unaffected: they are cut from the same image at the same
 
 **Outcome:** PARTIAL — `[code]`/`[test]`/`[build]` criteria pass; AC-3 … AC-6 pending owner
 **Version:** 1.11.29 → 1.11.30 (round 1, `6730abe`) → 1.11.31 (round 2)
-**Commit:** round 1 `6730abe`; round 2 not committed (owner asked for T-0020 round 2 and T-0021 first, review after)
+**Commit:** round 1 `6730abe`; round 2 `baf4aa9`
 
 ### Acceptance criteria
 | AC | Result | Evidence |
@@ -256,6 +256,30 @@ from the AC-3 run, to confirm `contentScale` is back to 1.000 after the resize.
 ---
 
 ## Review
+
+**Cowork, 2026-09-24 — DONE.** Owner confirmed AC-4 (Overlay on the text), AC-5 (resize / full-screen
+switch while translating) and AC-6 (existing region). Round 2 commit: pending (to be recorded by
+whoever commits).
+
+**Cowork, 2026-09-24 — review of round 2 (v1.11.31, uncommitted): code review passed; owner's quick test OK.**
+
+| AC | Verdict | Note |
+|---|---|---|
+| AC-1 | ✅ | Cause confirmed from the owner's log and written up (captured window 1920×1327 vs CG 1920×1205, bottom-aligned; prediction matched the screenshot within 3 px). |
+| AC-2 | ✅ | `CaptureGeometryTests` include the owner's exact scene, "scaleFactor nil → no crop", region conversion and off-screen text; `ResizeGovernorTests` cover settle time and bounce cap. 145 tests (Claude Code's evidence). |
+| AC-3 | ✅ owner | Owner, 2026-09-24: "ทดสอบคร่าวๆ แล้วทำงานตรงตามที่ร้องขอ" — outline on the text in the stone cutter menu. |
+| AC-4…AC-6 | ⏳ owner | Overlay mode on the same scene; windowed → resize / full-screen switch; existing region. |
+| AC-7 | ✅ | — |
+
+- The interim-review items are all addressed: one confirmed unit rule with a sanity check (no
+  silent crop to a wrong rect), stream sized from the captured window (contentScale back to 1),
+  `ResizeGovernor` against bouncing, regions converted visible → captured, off-screen text dropped,
+  mapping frame logged.
+- Overlay mode now places its window at the mapping frame, which reaches ~84 pt above the screen in
+  full-screen. AC-4 must confirm the Thai boxes still land on the text (a window partly off-screen).
+- **Minor (not blocking, → backlog):** `requestResize` runs `updateConfiguration` in a detached
+  `Task`; if translation is stopped and restarted during that await, the old task writes its
+  `configuredSize` into the new session. Guard with the stream identity. Rare.
 
 **Cowork, 2026-09-24 — owner test of round 1 (v1.11.30): still off, but the log pins the cause.**
 
@@ -335,3 +359,5 @@ and send the output + a screenshot.
 | 2026-09-24 | — | Cowork | round 1 tested by owner: y still off; cause identified from log (SCK window 122 pt taller than CG bounds) |
 | 2026-09-24 | (IN_PROGRESS) | Claude Code | round 2 started (owner: do T-0020 round 2 and T-0021, review after) |
 | 2026-09-24 | IN_PROGRESS → REVIEW | Claude Code | round 2: cause confirmed from the log, mapping frame = captured window, resize governor; AC-3…AC-6 manual pending owner |
+| 2026-09-24 | — | Cowork | code review passed; owner quick test OK; remaining manual ACs pending |
+| 2026-09-24 | REVIEW → DONE | Cowork | owner confirmed AC-4…AC-6 |

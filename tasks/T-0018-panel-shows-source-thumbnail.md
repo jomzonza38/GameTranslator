@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **Status** | REVIEW |
+| **Status** | DONE |
 | **Type** | feature |
 | **Priority** | P2 |
 | **Version impact** | minor |
@@ -189,6 +189,10 @@ After `./build.sh`:
 
 ## Review
 
+**Cowork, 2026-09-24 — DONE.** Owner confirmed AC-5 (toggle off → no pictures) and AC-6 (region rows
+unchanged). AC-7: top 12:29:13–38, v1.11.31, Graveyard Keeper: 0.0 / 28.4 / 57.0 / 31.4 / 7.9 / 7.1 % — settles ≤ 10 % (T-0016 goal), bursts of 30–57 % for ~15 s. Accepted — the static state meets the T-0016 goal; the bursts are tracked in
+the ROADMAP backlog (not specific to thumbnails, which are cut only for new texts).
+
 **Cowork, 2026-09-24 — owner test on v1.11.29:** AC-4 ✅ from the owner's screenshot (stone
 cutter menu: each entry's picture shows its own English text). AC-5…AC-7 still pending.
 
@@ -217,3 +221,4 @@ cutter menu: each entry's picture shows its own English text). AC-5…AC-7 still
 | 2026-09-24 | READY → IN_PROGRESS | Claude Code | started (owner: do T-0018 and T-0019, review after) |
 | 2026-09-24 | IN_PROGRESS → REVIEW | Claude Code | test/code/build ACs pass; AC-4…AC-7 manual pending owner |
 | 2026-09-24 | — | Cowork | code review passed; waiting for owner manual ACs |
+| 2026-09-24 | REVIEW → DONE | Cowork | owner confirmed AC-5…AC-7 |

@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **Status** | REVIEW |
+| **Status** | DONE |
 | **Type** | feature |
 | **Priority** | P2 |
 | **Version impact** | minor |
@@ -142,7 +142,7 @@ to scroll through a long panel (e.g. a craft menu with ~20 entries) to find it.
 
 **Outcome:** PARTIAL — `[test]`/`[code]`/`[build]` criteria pass; AC-5 … AC-8 pending owner (after T-0020 is DONE)
 **Version:** 1.11.31 → 1.11.32
-**Commit:** not committed (owner asked for T-0020 round 2 and T-0021 first, review after)
+**Commit:** `6dbbafa`
 
 ### Acceptance criteria
 | AC | Result | Evidence |
@@ -190,9 +190,34 @@ After `./build.sh` (and once T-0020's outline is confirmed on the text):
 
 ## Review
 
+**Cowork, 2026-09-24 — DONE.** Owner confirmed AC-6 (no jumping on a fast sweep), AC-7 (setting off)
+and AC-8 (stop / quit while marked). Fix the `ScreenCoordinates.swift` doc-comment nit in the commit.
+Commit: pending.
+
+**Cowork, 2026-09-24 — code review passed; owner's quick test OK.**
+
+| AC | Verdict | Note |
+|---|---|---|
+| AC-1 | ✅ | `GamePointer.entryID`: containment, smallest rect wins, duplicate text → the copy under the mouse. Tested. |
+| AC-2 | ✅ | `PointerRestTracker`: moving / sweeping never selects, resting 0.4 s selects, leaving clears after the delay, switching waits too. Tested. |
+| AC-3 | ✅ | Default on, persisted; tested. |
+| AC-4 | ✅ | Only `NSEvent.mouseLocation` polled by a 0.1 s main-run-loop timer; no event tap, no AX / Input Monitoring API. The timer starts in `show()` and stops in `hide()` (stop, game closed, Overlay mode); samples are ignored when the setting is off, the panel is collapsed or empty, or the mouse is over the panel (T-0019 wins). |
+| AC-5 | ✅ owner | Owner, 2026-09-24: works as requested in a quick test. |
+| AC-6…AC-8 | ⏳ owner | Fast sweep doesn't make the panel jump; setting off; stop / quit the game while an entry is marked. |
+| AC-9 | ✅ | — |
+
+- `pointedID` is validated against the current entries and cleared when its text leaves; `scrollTo`
+  fires only when the pointed entry changes, so the per-frame refresh doesn't fight the user's own
+  scrolling.
+- **Nit (fix before commit):** in `ScreenCoordinates.swift` the new `cgPoint(fromAppKit:)` was
+  inserted between `appKitRect(fromCG:primaryDisplayHeight:)` and its doc comment, so the comment
+  "CG rect → AppKit rect…" now sits on top of `cgPoint`, followed by `cgPoint`'s own comment.
+
 ## Status history
 | Date | Change | Who | Note |
 |---|---|---|---|
 | 2026-09-24 | → READY | Cowork | owner: pointing at the game should bring its message into view |
 | 2026-09-24 | READY → IN_PROGRESS | Claude Code | started on the owner's instruction ("do all") while T-0020 is in REVIEW; stacked, uncommitted |
 | 2026-09-24 | IN_PROGRESS → REVIEW | Claude Code | test/code/build ACs pass; AC-5…AC-8 manual pending owner (after T-0020) |
+| 2026-09-24 | — | Cowork | code review passed; owner quick test OK; remaining manual ACs pending |
+| 2026-09-24 | REVIEW → DONE | Cowork | owner confirmed AC-6…AC-8 |

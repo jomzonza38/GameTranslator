@@ -10,9 +10,6 @@ Lifecycle and who may set each status: `WORKFLOW.md` §3.
 
 | ID | Title | Status | Priority | Depends on | Next step by |
 |---|---|---|---|---|---|
-| [T-0020](T-0020-map-captured-content-to-screen.md) | Outlines and overlay text must sit exactly on the game text | REVIEW | P1 | — | Cowork (review) + owner (AC-3…AC-6 manual) |
-| [T-0021](T-0021-point-at-game-text-scrolls-panel.md) | Pointing at a text in the game brings its translation into view in the panel | REVIEW | P2 | T-0020 (in REVIEW) | Cowork (review) + owner (AC-5…AC-8 manual, after T-0020) |
-| [T-0018](T-0018-panel-shows-source-thumbnail.md) | In full-screen mode, each panel entry shows where its text came from | REVIEW (committed `c47e4ce`) | P2 | — | owner (AC-5…AC-7 manual) — code review ✅, AC-4 ✅ |
 
 ## Closed
 
@@ -38,3 +35,6 @@ Lifecycle and who may set each status: `WORKFLOW.md` §3.
 | [T-0016](T-0016-idle-cpu-while-capturing.md) | A static screen must cost almost no CPU while capturing | DONE | 2026-09-24 | `8fd9f5e` | — |
 | [T-0017](T-0017-slow-first-ocr-after-new-build.md) | Find out why the first OCR after a new build takes ~74 s | DONE | 2026-09-24 | `85a0893` | — |
 | [T-0019](T-0019-hover-panel-entry-highlights-source.md) | Pointing at a panel entry highlights its text in the game | REVIEW_FAILED | 2026-09-24 | `0acb92a` | T-0020 |
+| [T-0018](T-0018-panel-shows-source-thumbnail.md) | In full-screen mode, each panel entry shows where its text came from | DONE | 2026-09-24 | `c47e4ce` | — |
+| [T-0020](T-0020-map-captured-content-to-screen.md) | Outlines and overlay text must sit exactly on the game text | DONE | 2026-09-24 | `6730abe` + `baf4aa9` | — |
+| [T-0021](T-0021-point-at-game-text-scrolls-panel.md) | Pointing at a text in the game brings its translation into view in the panel | DONE | 2026-09-24 | `6dbbafa` | — |
