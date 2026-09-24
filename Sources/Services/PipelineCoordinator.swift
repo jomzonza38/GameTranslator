@@ -63,6 +63,11 @@ final class PipelineCoordinator: ObservableObject {
     /// new session starts. Capture and overlay keep running.
     private var isTranslationPaused = false
 
+    /// Moved on by every updateProvider() (provider picked, key saved, start). A
+    /// request remembers the value it was sent with, so a refusal of an old key or
+    /// provider can be told apart from one of the current key.
+    private var providerGeneration = 0
+
     private var cancellables = Set<AnyCancellable>()
 
     // MARK: - Init
@@ -210,6 +215,7 @@ final class PipelineCoordinator: ObservableObject {
     /// Called when the provider or its API key changes (and at start)
     func updateProvider() {
         translationService.switchProvider(to: settings.selectedProvider)
+        providerGeneration += 1
 
         // A new key or provider is the user's fix for a refused key / used-up quota
         if isTranslationPaused {
@@ -606,8 +612,13 @@ final class PipelineCoordinator: ObservableObject {
         // Paused after a refused key / used-up quota: no request until the user fixes it
         guard !isTranslationPaused else { return }
 
+        // The provider/key this request goes to — the key may change while it is in flight
+        let requestGeneration = providerGeneration
+        let requestProvider = translationService.currentProviderName
+        let requestUsesApiKey = translationService.currentProviderUsesApiKey
+
         let labels = works.filter { !$0.textsToTranslate.isEmpty }.map { $0.regionName ?? "full-screen" }
-        GameLog.log("Translating \(texts.count) texts via \(translationService.currentProviderName) [\(labels.joined(separator: ", "))]...")
+        GameLog.log("Translating \(texts.count) texts via \(requestProvider) [\(labels.joined(separator: ", "))]...")
 
         do {
             let translations = try await translationService.translateBatch(
@@ -658,17 +669,24 @@ final class PipelineCoordinator: ObservableObject {
                 }
             }
             GameLog.log("\u{2717} Translation error: \(error.localizedDescription)")
-            lastError = error.localizedDescription
 
-            // Key refused / quota used up: retrying every few seconds can't help
-            if let message = TranslationRefusal.pauseMessage(
+            switch TranslationRefusal.outcome(
                 for: error,
-                provider: translationService.currentProviderName,
-                usesApiKey: translationService.currentProviderUsesApiKey
+                provider: requestProvider,
+                usesApiKey: requestUsesApiKey,
+                requestGeneration: requestGeneration,
+                currentGeneration: providerGeneration
             ) {
+            case .pause(let message):
+                // Key refused / quota used up: retrying every few seconds can't help
                 isTranslationPaused = true
                 lastError = message
                 GameLog.log("⏸ Translation paused until the API key or provider changes")
+            case .ignoreOutdated:
+                // Sent before the key/provider changed — the new one hasn't failed
+                GameLog.log("Refusal was for the previous key/provider (\(requestProvider)) — not pausing")
+            case .notARefusal:
+                lastError = error.localizedDescription
             }
         }
     }

@@ -108,6 +108,31 @@ enum TranslationRefusal {
         }
     }
 
+    /// What to do with a failed request that was sent with provider/key `generation`
+    /// `requestGeneration`, now that it is `currentGeneration`
+    enum Outcome: Equatable {
+        /// A refusal of the current key/provider: pause with this Thai message
+        case pause(message: String)
+        /// A refusal of a key/provider that has since been replaced: not the current
+        /// key's fault — don't pause, don't show it
+        case ignoreOutdated
+        /// Not a refusal: normal back-off
+        case notARefusal
+    }
+
+    static func outcome(
+        for error: Error,
+        provider: String,
+        usesApiKey: Bool,
+        requestGeneration: Int,
+        currentGeneration: Int
+    ) -> Outcome {
+        guard let message = pauseMessage(for: error, provider: provider, usesApiKey: usesApiKey) else {
+            return .notARefusal
+        }
+        return requestGeneration == currentGeneration ? .pause(message: message) : .ignoreOutdated
+    }
+
     /// Thai text for the menu while paused, or nil when `error` is not a refusal
     static func pauseMessage(for error: Error, provider: String, usesApiKey: Bool) -> String? {
         switch kind(of: error) {

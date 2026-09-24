@@ -13,7 +13,7 @@ Lifecycle and who may set each status: `WORKFLOW.md` §3.
 | [T-0010](T-0010-api-key-fields-save-cleanly.md) | API key fields must save cleanly: trimmed, not on every keystroke, no session leak | REVIEW (committed `0f15d05`) | P2 | — | Owner (AC-4 manual) → Cowork DONE |
 | [T-0011](T-0011-cache-per-provider-no-chatter-caching.md) | Cached translations must belong to the provider and language that made them | REVIEW (committed `5beb3ad`) | P2 | — | Owner (AC-4 manual) → Cowork DONE |
 | [T-0012](T-0012-pause-on-refused-api-key.md) | Stop retrying while the API key is refused, and say so | REVIEW (committed `2cd55eb`) | P2 | T-0010 (in REVIEW) | Owner (AC-3 manual) → Cowork DONE |
-| [T-0014](T-0014-outdated-refusal-must-not-pause.md) | A refusal from an outdated request must not pause translation | PLANNED | P3 | T-0012 | Cowork (READY when T-0012 DONE) |
+| [T-0014](T-0014-outdated-refusal-must-not-pause.md) | A refusal from an outdated request must not pause translation | REVIEW | P3 | T-0012 (in REVIEW) | Cowork (review) |
 
 ## Closed
 
