@@ -83,13 +83,9 @@ enum RegionLayout {
         texts.compactMap { detected -> TranslatedRegion? in
             guard let translated = translation(detected.text) else { return nil }
 
-            // Convert normalized bounding box to screen coordinates
-            let screenRect = CGRect(
-                x: windowFrame.origin.x + detected.boundingBox.origin.x * windowFrame.width,
-                y: windowFrame.origin.y + detected.boundingBox.origin.y * windowFrame.height,
-                width: detected.boundingBox.width * windowFrame.width,
-                height: detected.boundingBox.height * windowFrame.height
-            )
+            // Normalized to the window content (the captured image is cropped to it) →
+            // screen coordinates of the window
+            let screenRect = CaptureGeometry.screenRect(forContentBox: detected.boundingBox, windowFrame: windowFrame)
 
             var fontSize = options.autoFontSize
                 ? OCRService.estimateFontSize(

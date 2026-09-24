@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **Status** | READY |
+| **Status** | IN_PROGRESS |
 | **Type** | fix |
 | **Priority** | P1 |
 | **Version impact** | patch |
@@ -103,6 +103,58 @@ the same amount. The outline and overlay text must land on the game text.
 
 ## Implementation Notes
 
+### Round 1 (2026-09-24) — fix the likely cause, measure the rest
+
+**What the owner's numbers say** (screenshot 2000×1294 px ≈ a 1470×956 pt screen, so
+×0.735): text x 382–600, y 309–342 pt; outline without its 4 pt padding x ≈ 322–513,
+y ≈ 370–397 pt. So outline ≈ **(−14, +99) + 0.878 × true position** — scaled by 0.878 in
+**both** axes and shifted.
+- A pure letterbox (window scaled to fit a buffer of another aspect ratio) can't do
+  that: one axis would keep scale 1.0.
+- A window-frame / buffer mismatch with the content scaled or padded inside the buffer
+  can. So can a window frame used for mapping that doesn't match what was captured.
+- The arithmetic can't pick between these → the values are now logged (below) and
+  must be read in the owner's scene (AC-1).
+
+**Changes in this round**
+1. **Capture follows the window size.** The stream used to be sized once from
+   `SCWindow.frame` (a snapshot from the window list) and never changed. Now:
+   - At start it is sized from the window's **live** CGWindowList bounds.
+   - On every frame the coordinator compares the window's current size with the
+     stream size (`CaptureGeometry.needsResize`, > 2 px) and calls
+     `ScreenCaptureService.resizeCapture(toWindowSize:)` → `SCStream.updateConfiguration`.
+     One resize at a time; a failure is logged and capture continues.
+   - No permission or `SCShareableContent` call is involved.
+2. **Frames are cropped to the window's content.** `StreamOutput` reads
+   `SCStreamFrameInfo` (`contentRect`, `contentScale`, `scaleFactor`) from each frame.
+   `CaptureGeometry.contentPixelRect` turns it into the window-content rect in buffer
+   pixels. The units aren't documented precisely, so it tries × contentScale ×
+   scaleFactor, × scaleFactor and as-is, and takes the largest that fits the buffer.
+   If the content doesn't fill the buffer, the `CGImage` is cropped to it before OCR.
+   From then on, every normalized coordinate (OCR boxes, regions, thumbnails) is
+   relative to the **window**, which is what `buildRegions` and the region selector
+   assume — so regions drawn earlier keep covering the same part (Req 4), and
+   thumbnails stay right (Req 5).
+3. **One tested mapping.** `RegionLayout.buildRegions` now uses
+   `CaptureGeometry.screenRect(forContentBox:windowFrame:)`, the same function the
+   tests cover.
+4. **Diagnostics in `GameTranslator.log`** (one line per change):
+   - `Capture geometry at start: SCWindow.frame=… live bounds=… output=WxH`
+   - `Capture frame geometry: buffer=… contentRect=… contentScale=… scaleFactor=… → window content in buffer=…`
+   - `Window frame (CGWindowList): …`
+   - `Capture resized to follow the window: A → B`
+
+**Still open — AC-1 needs the owner's log.** I can't run the capture here: a build
+other than the installed one would ask for Screen Recording (stability rule 1). Needed
+from the owner's scene (full-screen Graveyard Keeper, stone cutter menu), after
+`./build.sh`: the lines above from `~/Desktop/GameTranslator.log`, and whether the
+outline now surrounds the text.
+- If they show `SCWindow.frame` ≠ live bounds at start, or a `Capture resized…` line
+  when the game went full-screen, then (1) was the cause.
+- If `window content in buffer` is inset, then (2) is what corrects it.
+- If neither, and the outline is still off, the values say where the remaining offset
+  comes from (e.g. the window frame vs the captured area), and round 2 fixes that.
+
 ## Result
 
 ---
@@ -113,3 +165,5 @@ the same amount. The outline and overlay text must land on the game text.
 | Date | Change | Who | Note |
 |---|---|---|---|
 | 2026-09-24 | → READY | Cowork | corrects T-0019 (AC-4 failed on owner's screenshot) |
+| 2026-09-24 | READY → IN_PROGRESS | Claude Code | started |
+| 2026-09-24 | (IN_PROGRESS) | Claude Code | round 1 done (capture follows window size, crop to content rect, diagnostics, AC-2 tests pass); waiting for the owner's geometry log for AC-1 |

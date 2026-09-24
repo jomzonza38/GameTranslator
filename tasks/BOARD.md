@@ -10,7 +10,7 @@ Lifecycle and who may set each status: `WORKFLOW.md` §3.
 
 | ID | Title | Status | Priority | Depends on | Next step by |
 |---|---|---|---|---|---|
-| [T-0020](T-0020-map-captured-content-to-screen.md) | Outlines and overlay text must sit exactly on the game text | READY | P1 | — | Claude Code |
+| [T-0020](T-0020-map-captured-content-to-screen.md) | Outlines and overlay text must sit exactly on the game text | IN_PROGRESS | P1 | — | Owner (run v1.11.30 in the scene, send geometry log) → Claude Code |
 | [T-0018](T-0018-panel-shows-source-thumbnail.md) | In full-screen mode, each panel entry shows where its text came from | REVIEW (committed `c47e4ce`) | P2 | — | owner (AC-5…AC-7 manual) — code review ✅, AC-4 ✅ |
 
 ## Closed

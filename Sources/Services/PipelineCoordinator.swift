@@ -47,6 +47,8 @@ final class PipelineCoordinator: ObservableObject {
     /// Pictures of the original texts on screen, by source text (panel, full-screen
     /// mode). Made once when a text is first shown translated, dropped when it leaves.
     private var sourceThumbnails: [String: CGImage] = [:]
+    /// Last logged window frame (T-0020 diagnostics: one log line per change)
+    private var lastLoggedWindowFrame: CGRect?
     /// On-screen text is waiting to become stable, which needs another run of the
     /// same pixels — so identical frames must not be skipped until it is translated
     private var isWaitingForStableText = false
@@ -242,6 +244,7 @@ final class PipelineCoordinator: ObservableObject {
         lastFrame = nil
         frameFilter.reset()
         isWaitingForStableText = false
+        lastLoggedWindowFrame = nil
         sourceThumbnails.removeAll()
 
         await screenCapture.stopCapture()
@@ -405,12 +408,29 @@ final class PipelineCoordinator: ObservableObject {
             return // unchanged frame whose image we don't have (arrived out of order)
         }
 
+        let windowFrame = screenCapture.currentWindowFrame
+        followWindowSize(windowFrame)
+
         guard frameFilter.shouldProcess(
             frame.fingerprint,
-            windowFrame: screenCapture.currentWindowFrame,
+            windowFrame: windowFrame,
             workWaiting: isWaitingForStableText
         ) else { return }
         processFrame(frame)
+    }
+
+    /// Keep the capture sized to the window (resize / full-screen switch while
+    /// translating) and log the window frame whenever it changes (T-0020)
+    private func followWindowSize(_ windowFrame: CGRect?) {
+        guard let windowFrame else { return }
+        if windowFrame != lastLoggedWindowFrame {
+            lastLoggedWindowFrame = windowFrame
+            GameLog.log("Window frame (CGWindowList): \(ScreenCaptureService.describe(windowFrame))")
+        }
+        if screenCapture.captureNeedsResize(forWindowSize: windowFrame.size) {
+            let capture = screenCapture
+            Task { await capture.resizeCapture(toWindowSize: windowFrame.size) }
+        }
     }
 
     /// Run the pipeline on `frame` (or queue it behind the run in progress). Re-runs
