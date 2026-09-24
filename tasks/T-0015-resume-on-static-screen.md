@@ -136,7 +136,7 @@ something on screen changes.
 
 **Outcome:** PARTIAL — `[code]`/`[build]` criteria pass; AC-3 and AC-4 pending owner
 **Version:** 1.11.24 → 1.11.25
-**Commit:** not committed (waiting for owner)
+**Commit:** `ce43c16`
 
 ### Acceptance criteria
 | AC | Result | Evidence |
