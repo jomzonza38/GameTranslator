@@ -140,7 +140,7 @@ the original text as it looks in the game, so the player can match it at a glanc
 
 **Outcome:** PARTIAL — `[test]`/`[code]`/`[build]` criteria pass; AC-4 … AC-7 pending owner
 **Version:** 1.11.27 → 1.11.28
-**Commit:** not committed (owner asked for T-0018 and T-0019 first, review after)
+**Commit:** `c47e4ce`
 
 ### Acceptance criteria
 | AC | Result | Evidence |
@@ -189,9 +189,31 @@ After `./build.sh`:
 
 ## Review
 
+**Cowork, 2026-09-24 — owner test on v1.11.29:** AC-4 ✅ from the owner's screenshot (stone
+cutter menu: each entry's picture shows its own English text). AC-5…AC-7 still pending.
+
+**Cowork, 2026-09-24 — code review passed; waiting for owner's AC-4…AC-7.**
+
+| AC | Verdict | Note |
+|---|---|---|
+| AC-1 | ✅ | `SourceThumbnail.pixelRect`: box × image size, top-left origin (matches `OCRService` and `CGImage.cropping`), padding, `.integral`, clamped, nil when empty. Tests cover the edge and a real crop. |
+| AC-2 | ✅ | `loadShowSourceThumbnails` → default on, persisted; tested with its own suite. |
+| AC-3 | ✅ | Crop only `where sourceThumbnails[text] == nil` and the text is translated; stale keys dropped each run; guard clears everything in Overlay / region mode / setting off. Row view shows a picture only when `regionColor == nil`. |
+| AC-4…AC-7 | ⏳ owner | — |
+| AC-8 | ✅ | 124 tests (Claude Code's evidence; Cowork can't run Xcode here). |
+
+- Good call copying the crop into a small bitmap: `cropping(to:)` alone would pin the ~20 MB frame per entry.
+- `SourceThumbnail.swift` is outside *Files / Modules*; the reason is recorded. OK.
+- Re-run on mode switch / toggle uses the T-0015 mechanism, so a static screen gets pictures without waiting. OK.
+- **Note (not blocking):** pictures are keyed by source text only. If the same text is on screen twice
+  (two "Buy" buttons, two "x2" labels), both entries show the picture of whichever was cut first. Both
+  pictures look the same anyway, so the player loses little; T-0019's outline shows which one is where.
+  → backlog, not a corrective task.
+
 ## Status history
 | Date | Change | Who | Note |
 |---|---|---|---|
 | 2026-09-24 | → READY | Cowork | owner: can't tell where each full-screen translation came from (Graveyard Keeper) |
 | 2026-09-24 | READY → IN_PROGRESS | Claude Code | started (owner: do T-0018 and T-0019, review after) |
 | 2026-09-24 | IN_PROGRESS → REVIEW | Claude Code | test/code/build ACs pass; AC-4…AC-7 manual pending owner |
+| 2026-09-24 | — | Cowork | code review passed; waiting for owner manual ACs |

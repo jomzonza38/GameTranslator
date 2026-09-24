@@ -28,7 +28,7 @@ From the owner — every task must keep these (details in `CLAUDE.md`):
 | M2 — Reliability & UX | Errors visible to the user, no request storms, correct placement on every display | done 2026-09-24 | T-0006 … T-0009 |
 | M3 — Providers & settings hygiene | Keys saved cleanly, right cache per provider, no endless retries on a refused key, clean test logs | done 2026-09-24 | T-0010 … T-0015 (T-0012 corrected by T-0015) |
 | M4 — Performance & first use | Near-idle CPU on a static screen; no silent minute-long wait on the first OCR | done 2026-09-24 | T-0016, T-0017 |
-| M5 — Know where each translation came from | When the whole window is translated (text in many places, e.g. Graveyard Keeper), the player can tell which translation belongs to which text | active | T-0018, T-0019 |
+| M5 — Know where each translation came from | When the whole window is translated (text in many places, e.g. Graveyard Keeper), the player can tell which translation belongs to which text | active | T-0018, T-0019 (→ T-0020) |
 
 ## Backlog (not yet tasks)
 
@@ -97,6 +97,10 @@ T-0007 · batch fallback request storm → T-0008 · multi-monitor coordinates �
 Already in place (no task needed): OCR lines merged into blocks (`RegionLayout.mergeAdjacentLines`),
 frame-to-frame tracking (`TextTracker`), stability gate for typewriter text, region mode
 (colour bar + name in the panel, OCR cropped to the region). Tasks: T-0018, T-0019.
+- From T-0018/T-0019 review: key panel pictures and entry ids by text **and position**, so the
+  same text shown twice gets its own picture and the hover never jumps between the copies.
+- From owner's test 2026-09-24: number-only texts ("15", "10", "7/1" read as "71") fill the panel
+  and get sent for translation. Skip or pass through texts with no letters.
 - Numbered badges (①②③) on the game next to each text, same number in the panel.
   Decide after T-0018/T-0019 whether it is still needed.
 - Panel order: newest text first with a "ใหม่" marker, instead of top-to-bottom

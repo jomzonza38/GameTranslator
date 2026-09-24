@@ -9,7 +9,7 @@
 | **Milestone** | M5 — Know where each translation came from |
 | **Depends on** | T-0018 |
 | **Corrects** | — |
-| **Follow-up** | — |
+| **Follow-up** | T-0020 |
 | **Created** | 2026-09-24 by Cowork |
 
 ## Objective
@@ -121,7 +121,7 @@ over a panel entry should outline that entry's source text on the game screen.
 
 **Outcome:** PARTIAL — `[test]`/`[code]`/`[build]` criteria pass; AC-4 … AC-6 pending owner
 **Version:** 1.11.28 → 1.11.29
-**Commit:** not committed (owner asked for T-0018 and T-0019 first, review after)
+**Commit:** `0acb92a`
 
 ### Acceptance criteria
 | AC | Result | Evidence |
@@ -168,9 +168,39 @@ After `./build.sh`:
 
 ## Review
 
+**Cowork, 2026-09-24 — owner test on v1.11.29: REVIEW_FAILED (AC-4).**
+- AC-4 ❌: full-screen Graveyard Keeper, stone cutter menu, hovering "A piece of stone" drew the
+  outline below-left of the text and ~0.88× its width (screenshot: text x≈520–817 y≈420–465,
+  outline x≈432–704 y≈498–545, 2000×1294 px).
+- The hover logic itself works (right entry, outline appears/disappears). T-0018's thumbnail
+  for the same entry is correct, so the OCR box is right and the fault is the image → screen
+  mapping that `sourceRect` inherits from `buildRegions` (shared with Overlay mode).
+- Fix goes in corrective task **T-0020**. AC-5/AC-6 to be re-checked there.
+
+**Cowork, 2026-09-24 — code review passed; waiting for owner's AC-4…AC-6.**
+
+| AC | Verdict | Note |
+|---|---|---|
+| AC-1 | ✅ | Stable `Entry.id` (region + text + occurrence); `update(from:)` re-reads the hovered entry's `sourceRect`. `sourceRect` is set in the initializer from the unpushed box and kept by `withScreenRect`, so the outline surrounds the real text. |
+| AC-2 | ✅ | Hover dropped when the id is gone; `clear()` on `hide()` (stop, game closed, Overlay mode, panel closed) plus an explicit `sourceHighlight.hide()`. |
+| AC-3 | ✅ | `ignoresMouseEvents = true` on the outline window. |
+| AC-4…AC-6 | ⏳ owner | — |
+| AC-7 | ✅ | 132 tests (Claude Code's evidence). |
+
+- Separate small window instead of reusing the overlay (hidden in Panel mode): right choice.
+- Row-to-row moves are safe in either event order (`setHovered(_, false)` only clears its own id).
+- Collapse is by button only (no auto-collapse), so the mouse always leaves the row first — no stuck outline.
+- **Note (not blocking):** for the same text twice, `#0`/`#1` follow the top-to-bottom sort. If the two
+  boxes swap vertical order between frames, the hover jumps to the other copy. Rare; → backlog with
+  T-0018's note (key by text + position).
+- Owner, please also check during AC-4: move the game window while hovering → the outline follows
+  on the next change on screen (a static screen skips runs by design, T-0016).
+
 ## Status history
 | Date | Change | Who | Note |
 |---|---|---|---|
 | 2026-09-24 | → READY | Cowork | follows T-0018 |
 | 2026-09-24 | READY → IN_PROGRESS | Claude Code | started (stacked on T-0018, uncommitted) |
 | 2026-09-24 | IN_PROGRESS → REVIEW | Claude Code | test/code/build ACs pass; AC-4…AC-6 manual pending owner |
+| 2026-09-24 | — | Cowork | code review passed; waiting for owner manual ACs |
+| 2026-09-24 | REVIEW → REVIEW_FAILED | Cowork | outline misplaced in owner's test; → T-0020 |

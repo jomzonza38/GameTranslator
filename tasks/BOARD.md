@@ -4,14 +4,14 @@ Index of all tasks. The **Status line inside each task file is the source of
 truth**; whoever changes a status updates this row in the same step.
 Lifecycle and who may set each status: `WORKFLOW.md` §3.
 
-**Next ID:** T-0020
+**Next ID:** T-0021
 
 ## Active
 
 | ID | Title | Status | Priority | Depends on | Next step by |
 |---|---|---|---|---|---|
-| [T-0018](T-0018-panel-shows-source-thumbnail.md) | In full-screen mode, each panel entry shows where its text came from | REVIEW | P2 | — | Cowork (review) + owner (AC-4…AC-7 manual) |
-| [T-0019](T-0019-hover-panel-entry-highlights-source.md) | Pointing at a panel entry highlights its text in the game | REVIEW | P2 | T-0018 (in REVIEW) | Cowork (review) + owner (AC-4…AC-6 manual) |
+| [T-0020](T-0020-map-captured-content-to-screen.md) | Outlines and overlay text must sit exactly on the game text | READY | P1 | — | Claude Code |
+| [T-0018](T-0018-panel-shows-source-thumbnail.md) | In full-screen mode, each panel entry shows where its text came from | REVIEW (committed `c47e4ce`) | P2 | — | owner (AC-5…AC-7 manual) — code review ✅, AC-4 ✅ |
 
 ## Closed
 
@@ -36,3 +36,4 @@ Lifecycle and who may set each status: `WORKFLOW.md` §3.
 | [T-0015](T-0015-resume-on-static-screen.md) | Resuming, switching provider and retrying must work on a static screen | DONE | 2026-09-24 | `ce43c16` | — |
 | [T-0016](T-0016-idle-cpu-while-capturing.md) | A static screen must cost almost no CPU while capturing | DONE | 2026-09-24 | `8fd9f5e` | — |
 | [T-0017](T-0017-slow-first-ocr-after-new-build.md) | Find out why the first OCR after a new build takes ~74 s | DONE | 2026-09-24 | `85a0893` | — |
+| [T-0019](T-0019-hover-panel-entry-highlights-source.md) | Pointing at a panel entry highlights its text in the game | REVIEW_FAILED | 2026-09-24 | `0acb92a` | T-0020 |
