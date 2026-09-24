@@ -8,15 +8,21 @@ final class GoogleCloudProvider: TranslationProvider {
 
     private let apiKey: String
     private let baseURL = "https://translation.googleapis.com/language/translate/v2"
-    private let session: URLSession
-
-    init(apiKey: String) {
-        self.apiKey = apiKey
-
+    /// One session for every instance: a provider is rebuilt whenever the API key or
+    /// provider changes, and a session per instance was never released. Not
+    /// invalidated either — a request still running on an old instance would crash
+    /// on an invalidated session.
+    private static let sharedSession: URLSession = {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 10
         config.timeoutIntervalForResource = 30
-        self.session = URLSession(configuration: config)
+        return URLSession(configuration: config)
+    }()
+
+    private let session = sharedSession
+
+    init(apiKey: String) {
+        self.apiKey = apiKey
     }
 
     func warmUp() {

@@ -8,17 +8,24 @@ final class ClaudeProvider: LLMChatProvider {
     let requiresApiKey = true
 
     private let apiKey: String
-    private let session: URLSession
+    /// One session for every instance: a provider is rebuilt whenever the API key or
+    /// provider changes, and a session per instance was never released. Not
+    /// invalidated either — a request still running on an old instance would crash
+    /// on an invalidated session.
+    private static let sharedSession: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 15
+        config.timeoutIntervalForResource = 30
+        config.httpMaximumConnectionsPerHost = 4
+        return URLSession(configuration: config)
+    }()
+
+    private let session = sharedSession
     private let model: String
 
     init(apiKey: String, model: String = "claude-haiku-4-5-20251001") {
         self.apiKey = apiKey
         self.model = model
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 15
-        config.timeoutIntervalForResource = 30
-        config.httpMaximumConnectionsPerHost = 4
-        self.session = URLSession(configuration: config)
     }
 
     func warmUp() {

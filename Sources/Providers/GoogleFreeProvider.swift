@@ -8,16 +8,25 @@ final class GoogleFreeProvider: TranslationProvider {
     let limitDescription = "ไม่จำกัดอย่างเป็นทางการ (อาจถูก rate limit ถ้าใช้เยอะ)"
     let requiresApiKey = false
 
+    /// One session for every instance: a provider is rebuilt whenever the API key or
+    /// provider changes, and a session per instance was never released. Not
+    /// invalidated either — a request still running on an old instance would crash
+    /// on an invalidated session.
+    private static let sharedSession = URLSession(configuration: configured(.default))
+
     private let session: URLSession
 
-    /// `configuration` is replaceable so tests can stub the network
-    init(configuration: URLSessionConfiguration = .default) {
-        let config = configuration
+    /// `configuration` is only for tests, to stub the network; the app uses the shared session
+    init(configuration: URLSessionConfiguration? = nil) {
+        self.session = configuration.map { URLSession(configuration: Self.configured($0)) } ?? Self.sharedSession
+    }
+
+    private static func configured(_ config: URLSessionConfiguration) -> URLSessionConfiguration {
         config.timeoutIntervalForRequest = 10
         config.timeoutIntervalForResource = 30
         // Allow more concurrent connections for parallel fallback
         config.httpMaximumConnectionsPerHost = 6
-        self.session = URLSession(configuration: config)
+        return config
     }
 
     func warmUp() {

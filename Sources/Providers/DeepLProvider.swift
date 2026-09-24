@@ -10,7 +10,18 @@ final class DeepLProvider: TranslationProvider {
     private let apiKey: String
     private let isPro: Bool
     private let baseURL: String
-    private let session: URLSession
+    /// One session for every instance: a provider is rebuilt whenever the API key or
+    /// provider changes, and a session per instance was never released. Not
+    /// invalidated either — a request still running on an old instance would crash
+    /// on an invalidated session.
+    private static let sharedSession: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 10
+        config.timeoutIntervalForResource = 30
+        return URLSession(configuration: config)
+    }()
+
+    private let session = sharedSession
 
     /// Initialize DeepL provider
     /// - Parameters:
@@ -27,11 +38,6 @@ final class DeepLProvider: TranslationProvider {
         self.baseURL = isPro
             ? "https://api.deepl.com/v2/translate"
             : "https://api-free.deepl.com/v2/translate"
-
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 10
-        config.timeoutIntervalForResource = 30
-        self.session = URLSession(configuration: config)
     }
 
     func warmUp() {

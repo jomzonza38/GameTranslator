@@ -83,11 +83,9 @@ private struct TranslationSettingsTab: View {
 
             Section("API Keys") {
                 if settings.selectedProvider == .openAI {
-                    SecureField("OpenAI API Key:", text: $settings.openAIApiKey)
-                        .textFieldStyle(.roundedBorder)
-                        .onChange(of: settings.openAIApiKey) { _, _ in
-                            pipeline.updateProvider()
-                        }
+                    APIKeyField(title: "OpenAI API Key:", key: $settings.openAIApiKey) {
+                        pipeline.updateProvider()
+                    }
 
                     Link("สมัคร OpenAI API Key",
                          destination: URL(string: "https://platform.openai.com/api-keys")!)
@@ -99,11 +97,9 @@ private struct TranslationSettingsTab: View {
                 }
 
                 if settings.selectedProvider == .claudeHaiku {
-                    SecureField("Anthropic API Key:", text: $settings.claudeApiKey)
-                        .textFieldStyle(.roundedBorder)
-                        .onChange(of: settings.claudeApiKey) { _, _ in
-                            pipeline.updateProvider()
-                        }
+                    APIKeyField(title: "Anthropic API Key:", key: $settings.claudeApiKey) {
+                        pipeline.updateProvider()
+                    }
 
                     Link("สมัคร Anthropic API Key",
                          destination: URL(string: "https://console.anthropic.com/settings/keys")!)
@@ -115,11 +111,9 @@ private struct TranslationSettingsTab: View {
                 }
 
                 if settings.selectedProvider == .deeplFree || settings.selectedProvider == .deeplPro {
-                    SecureField("DeepL API Key:", text: $settings.deeplApiKey)
-                        .textFieldStyle(.roundedBorder)
-                        .onChange(of: settings.deeplApiKey) { _, _ in
-                            pipeline.updateProvider()
-                        }
+                    APIKeyField(title: "DeepL API Key:", key: $settings.deeplApiKey) {
+                        pipeline.updateProvider()
+                    }
 
                     Link("สมัคร DeepL API Key (ฟรี)",
                          destination: URL(string: "https://www.deepl.com/pro-api")!)
@@ -127,11 +121,9 @@ private struct TranslationSettingsTab: View {
                 }
 
                 if settings.selectedProvider == .googleCloud {
-                    SecureField("Google Cloud API Key:", text: $settings.googleCloudApiKey)
-                        .textFieldStyle(.roundedBorder)
-                        .onChange(of: settings.googleCloudApiKey) { _, _ in
-                            pipeline.updateProvider()
-                        }
+                    APIKeyField(title: "Google Cloud API Key:", key: $settings.googleCloudApiKey) {
+                        pipeline.updateProvider()
+                    }
 
                     Link("สร้าง Google Cloud API Key",
                          destination: URL(string: "https://console.cloud.google.com/apis/credentials")!)
@@ -469,5 +461,55 @@ private struct StatsRow: View {
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
         }
+    }
+}
+
+// MARK: - API Key Field
+
+/// SecureField for an API key. Typing edits a local draft; the key is saved (trimmed)
+/// only when editing ends — Return, focus leaving the field, the field going away
+/// (window closed, other provider picked) or a 1 s pause in typing. Saving writes the
+/// Keychain and rebuilds the provider, which must not happen on every keystroke.
+private struct APIKeyField: View {
+    let title: String
+    @Binding var key: String
+    let onSave: () -> Void
+
+    @State private var draft = ""
+    @State private var pendingSave: Task<Void, Never>?
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        SecureField(title, text: $draft)
+            .textFieldStyle(.roundedBorder)
+            .focused($isFocused)
+            .onAppear { draft = key }
+            .onChange(of: key) { _, newKey in
+                // Loaded from the Keychain after the field appeared
+                if !isFocused { draft = newKey }
+            }
+            .onChange(of: draft) { _, _ in saveAfterPause() }
+            .onChange(of: isFocused) { _, focused in
+                if !focused { save() }
+            }
+            .onSubmit { save() }
+            .onDisappear { save() }
+    }
+
+    private func saveAfterPause() {
+        pendingSave?.cancel()
+        pendingSave = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled else { return }
+            save()
+        }
+    }
+
+    private func save() {
+        pendingSave?.cancel()
+        pendingSave = nil
+        guard let value = APIKeyInput.valueToSave(draft: draft, current: key) else { return }
+        key = value
+        onSave()
     }
 }

@@ -399,12 +399,12 @@ final class AppSettings: ObservableObject {
                 // Only drop the plaintext copy once the Keychain write succeeded
                 defaults.removeObject(forKey: account)
                 GameLog.log("Migrated \(account) from UserDefaults to Keychain")
-                return legacy
+                return APIKeyInput.normalized(legacy)
             } else {
-                return legacy
+                return APIKeyInput.normalized(legacy)
             }
         }
-        return KeychainStore.get(account) ?? ""
+        return APIKeyInput.normalized(KeychainStore.get(account) ?? "")
     }
 
     // MARK: - Capture Regions Persistence
@@ -530,5 +530,21 @@ extension Double {
     /// Returns self if non-zero, otherwise nil (for UserDefaults default handling)
     var nonZero: Double? {
         self != 0 ? self : nil
+    }
+}
+
+// MARK: - API Key Input
+
+/// Rules for turning what the user typed or pasted into the stored API key
+enum APIKeyInput {
+    /// Pasted keys often carry a trailing space or newline, which the services reject (401)
+    static func normalized(_ key: String) -> String {
+        key.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// The value to save for `draft`, or nil when it would not change the stored key
+    static func valueToSave(draft: String, current: String) -> String? {
+        let value = normalized(draft)
+        return value == current ? nil : value
     }
 }
