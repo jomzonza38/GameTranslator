@@ -162,7 +162,7 @@ final class MeaningService: ObservableObject {
             return ClaudeProvider(apiKey: key)
         }
         self.google = google ?? GoogleFreeProvider()
-        self.chatProvider = chatProvider ?? { nil }
+        self.chatProvider = chatProvider ?? { AppSettings.shared.learningChatProvider }
         self.selectedProvider = selectedProvider ?? { AppSettings.shared.selectedProvider }
     }
 

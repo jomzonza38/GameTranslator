@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **Status** | PLANNED |
+| **Status** | REVIEW |
 | **Type** | feature |
 | **Priority** | P2 |
 | **Version impact** | minor |
@@ -94,7 +94,91 @@ answers from an AI that knows the sentence, its Thai translation and the game.
 
 ## Implementation Notes
 
+- **Started while PLANNED** on the owner's instruction; stacked on T-0022/T-0023 (in REVIEW,
+  uncommitted).
+- **Setting (Req 1):** `AppSettings.learningChatProvider` (Claude Haiku 4.5 / OpenAI
+  GPT-4o-mini), key `learningChatProvider`. Default = the translation provider if it is
+  one of those, else Claude (`loadLearningChatProvider`, testable). Settings →
+  **"AI สำหรับแชทเรียนรู้"** has the picker, **that provider's key field** (the API Keys section
+  above only shows the translation provider's key), a status line "✓ มี API key ของ … แล้ว"
+  / "ยังไม่มี API key … — ใส่ในช่องด้านบน", and what it's used for. T-0023's meaning lookup now
+  prefers this provider (`MeaningService` default `chatProvider`).
+- **Multi-turn without touching the providers:** `ChatPrompt.user` sends the context plus the
+  recent conversation ("Student: … / Teacher: …", last 10 turns, notices excluded) inside
+  one user message, through the existing `LLMChatProvider.complete`. `LLMPrompt` and
+  `sanitize` are untouched (no diff under `Sources/Providers/` in this task — AC-4).
+- **Prompt (Req 3, AC-1):**
+  - system: friendly Thai language teacher for the game (title, source language); answer
+    in Thai, and point out a wrong or weak game translation.
+  - user: game line, the game's Thai translation (for a word: its meaning), **only the
+    glossary terms that appear in the line** (`relevantGlossary`, case-insensitive), the
+    trimmed history, then the question.
+- **`LearningChatService`** (`@MainActor`; provider, key lookup and LLM factory are
+  injectable):
+  - one chat per item (sentence/word id) kept for the session (Req 5), "ล้างแชท" clears it.
+  - `send` is ignored while an answer is loading (the send and quick-question buttons are
+    disabled too — Req 4), and `stop()` cancels.
+  - No key → the Thai notice "ยังไม่มี API key ของ … — ใส่ API key ได้ที่ ตั้งค่า → AI สำหรับแชทเรียนรู้"
+    and **no request** (AC-3). Errors appear as Thai notices in the chat. It never touches
+    the pipeline.
+  - The key is read only when a question is sent (Req 7). Opening Settings reads the chosen
+    provider's key to show its status (Req 1) — that's on the user's action, not at launch.
+  - Log: one line per request and answer with **lengths only** — no text, no key.
+- **UI (Req 2):** each detail pane (T-0023) ends with **"💬 ถาม AI"**, which opens the chat:
+  - the four quick questions ("ทำไมแปลแบบนี้?", "แยกคำศัพท์ในประโยคนี้", "แปลแบบอื่นได้ไหม?",
+    "ยกตัวอย่างประโยคอื่น")
+  - the conversation (user / AI bubbles, notices in orange)
+  - "AI กำลังตอบ…" with **หยุด**
+  - a text box: Return sends, Shift-Return adds a new line (`onKeyPress`)
+  - **ส่ง**, **ล้างแชท**
+  - The chat opens again automatically when you come back to an item that has one.
+- New file `Sources/Services/LearningChatService.swift`.
+
 ## Result
+
+**Outcome:** PARTIAL — `[test]`/`[code]`/`[build]` criteria pass; AC-5 and AC-6 pending owner
+**Version:** 1.13.0 → 1.14.0
+**Commit:** not committed (owner asked for all of M6 first, review after)
+
+### Acceptance criteria
+| AC | Result | Evidence |
+|---|---|---|
+| AC-1 | ✅ pass | `ChatPromptTests.testPromptHasOriginalTranslationGameAndOnlyRelevantGlossary` (Bishop included, Graveyard not), `testHistoryIsTrimmedToTheLastTurnsWithoutNotices` (last 10, no notices). |
+| AC-2 | ✅ pass | `testChatProviderDefaultAndPersistence` (translation LLM / else Claude / stored choice / non-LLM ignored). |
+| AC-3 | ✅ pass | `LearningChatServiceTests.testNoKeyGivesThaiMessageWithoutARequest` (0 requests). Also the follow-up includes the history, chats per item, and a second question while waiting is ignored. |
+| AC-4 | ✅ pass | No change under `Sources/Providers/`; key read in `send` only; log lines contain lengths only. |
+| AC-5, AC-6 | ⏳ pending owner | Steps below. |
+| AC-7 | ✅ pass | `Executed 182 tests, with 0 failures`, `** TEST SUCCEEDED **`, `** BUILD SUCCEEDED **`. |
+
+### Build & test
+```
+Executed 182 tests, with 0 failures (0 unexpected)
+** TEST SUCCEEDED **
+** BUILD SUCCEEDED **
+```
+
+### Changed files (this task only, on top of T-0023)
+```
+ Resources/Info.plist                         | 1.14.0
+ Sources/Services/LearningChatService.swift   | (new) ChatTurn, ChatPrompt, LearningChatService
+ Sources/Models/AppSettings.swift             | learningChatProvider
+ Sources/Views/SettingsWindow.swift           | "AI สำหรับแชทเรียนรู้" section
+ Sources/Services/MeaningService.swift        | prefers the chat provider
+ Sources/Views/LearningView.swift             | ChatPane in both detail panes
+ Tests/LearningChatTests.swift                | (new, 6 tests)
+```
+
+### Manual checks for the owner
+After `./build.sh`:
+- **AC-5:** Settings → AI สำหรับแชทเรียนรู้ → Claude (or OpenAI) with a key → Learning → pick a
+  sentence → **💬 ถาม AI** → "ทำไมแปลแบบนี้?" → a Thai answer about that line; then type a
+  follow-up (Return) → the answer refers to the previous one.
+- **AC-6:** ask something and press **หยุด** while it loads → stops cleanly. Choose a
+  provider without a key and ask → Thai "ยังไม่มี API key …" message, nothing sent. The game
+  keeps being translated normally meanwhile.
+
+### Proposed follow-ups
+- none
 
 ---
 
@@ -104,3 +188,5 @@ answers from an AI that knows the sentence, its Thai translation and the game.
 | Date | Change | Who | Note |
 |---|---|---|---|
 | 2026-09-24 | → PLANNED | Cowork | created; READY when T-0022 is DONE |
+| 2026-09-24 | PLANNED → IN_PROGRESS | Claude Code | started on the owner's instruction ("do all of M6") while T-0022 is in REVIEW; stacked, uncommitted |
+| 2026-09-24 | IN_PROGRESS → REVIEW | Claude Code | test/code/build ACs pass; AC-5, AC-6 manual pending owner |

@@ -205,13 +205,28 @@ struct LearningView: View {
         let data = store.data(for: game)
         if tab == .words, let id = selectedWord, let word = data.words.first(where: { $0.id == id }) {
             Divider()
-            WordDetail(word: word, game: game, meanings: meanings, settings: settings)
-                .frame(width: 280)
+            WordDetail(word: word, game: game, meanings: meanings, settings: settings,
+                       chatContext: chatContext(original: word.word, translation: word.meaning))
+                .id(word.id)
+                .frame(width: 300)
         } else if tab == .sentences, let id = selectedSentence, let sentence = data.sentences.first(where: { $0.id == id }) {
             Divider()
-            SentenceDetail(sentence: sentence, game: game, meanings: meanings, settings: settings)
-                .frame(width: 280)
+            SentenceDetail(sentence: sentence, game: game, meanings: meanings, settings: settings,
+                           chatContext: chatContext(original: sentence.original, translation: sentence.translation))
+                .id(sentence.id)
+                .frame(width: 300)
         }
+    }
+
+    /// What "💬 ถาม AI" talks about (T-0025)
+    private func chatContext(original: String, translation: String?) -> ChatItemContext {
+        ChatItemContext(
+            original: original,
+            translation: translation,
+            gameTitle: game,
+            sourceLanguage: settings.sourceLanguage.englishName,
+            glossary: settings.gameProfiles.values.first { $0.title == game }?.glossary ?? []
+        )
     }
 
     // MARK: Filtering
@@ -375,6 +390,7 @@ private struct WordDetail: View {
     let game: String
     @ObservedObject var meanings: MeaningService
     @ObservedObject var settings: AppSettings
+    let chatContext: ChatItemContext
 
     var body: some View {
         ScrollView {
@@ -419,6 +435,9 @@ private struct WordDetail: View {
                         Text(example).font(.callout).textSelection(.enabled)
                     }
                 }
+
+                Divider()
+                ChatPane(itemID: word.id, context: chatContext)
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -443,6 +462,7 @@ private struct SentenceDetail: View {
     let game: String
     @ObservedObject var meanings: MeaningService
     @ObservedObject var settings: AppSettings
+    let chatContext: ChatItemContext
 
     var body: some View {
         ScrollView {
@@ -472,6 +492,9 @@ private struct SentenceDetail: View {
                 if let error = meanings.lastError {
                     Text(error).font(.caption).foregroundStyle(.red)
                 }
+
+                Divider()
+                ChatPane(itemID: sentence.id, context: chatContext)
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -480,6 +503,113 @@ private struct SentenceDetail: View {
 
     private func explain(force: Bool) {
         meanings.explain(sentenceID: sentence.id, game: game, sourceLanguage: settings.sourceLanguage.englishName, force: force)
+    }
+}
+
+// MARK: - Chat (T-0025)
+
+/// "💬 ถาม AI" about one sentence or word. Nothing is sent until the user presses send
+/// or a quick question.
+private struct ChatPane: View {
+    let itemID: UUID
+    let context: ChatItemContext
+    @ObservedObject private var chat = LearningChatService.shared
+    @State private var isOpen = false
+    @State private var draft = ""
+
+    private var turns: [ChatTurn] { chat.turns(for: itemID) }
+    private var isWaitingHere: Bool { chat.sendingItem == itemID }
+
+    var body: some View {
+        if isOpen || !turns.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("💬 ถาม AI").font(.headline)
+                    Spacer()
+                    Button("ล้างแชท") { chat.clear(item: itemID) }
+                        .buttonStyle(.borderless)
+                        .disabled(turns.isEmpty)
+                }
+
+                // Quick questions
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(ChatPrompt.quickQuestions, id: \.self) { question in
+                        Button(question) { chat.send(question, about: itemID, context: context) }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .disabled(chat.isSending)
+                    }
+                }
+
+                ForEach(turns) { turn in
+                    bubble(turn)
+                }
+
+                if isWaitingHere {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.small)
+                        Text("AI กำลังตอบ…").font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        Button("หยุด") { chat.stop() }
+                            .controlSize(.small)
+                    }
+                }
+
+                TextEditor(text: $draft)
+                    .font(.callout)
+                    .frame(height: 52)
+                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.secondary.opacity(0.3)))
+                    // Return sends; Shift-Return makes a new line
+                    .onKeyPress(.return, phases: .down) { press in
+                        if press.modifiers.contains(.shift) { return .ignored }
+                        sendDraft()
+                        return .handled
+                    }
+
+                HStack {
+                    Text("Return ส่ง · Shift-Return ขึ้นบรรทัดใหม่")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                    Spacer()
+                    Button("ส่ง") { sendDraft() }
+                        .disabled(chat.isSending || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        } else {
+            Button("💬 ถาม AI") { isOpen = true }
+        }
+    }
+
+    private func sendDraft() {
+        guard !chat.isSending else { return }
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        draft = ""
+        chat.send(text, about: itemID, context: context)
+    }
+
+    @ViewBuilder
+    private func bubble(_ turn: ChatTurn) -> some View {
+        switch turn.role {
+        case .user:
+            Text(turn.text)
+                .font(.callout)
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.accentColor.opacity(0.15)))
+                .textSelection(.enabled)
+        case .assistant:
+            Text(turn.text)
+                .font(.callout)
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(0.12)))
+                .textSelection(.enabled)
+        case .notice:
+            Text(turn.text)
+                .font(.caption)
+                .foregroundStyle(.orange)
+        }
     }
 }
 

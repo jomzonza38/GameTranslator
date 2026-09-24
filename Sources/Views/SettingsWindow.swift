@@ -171,6 +171,38 @@ private struct TranslationSettingsTab: View {
                 }
             }
 
+            // AI for the Learning window's chat and word meanings (T-0025)
+            Section("AI สำหรับแชทเรียนรู้") {
+                Picker("ใช้:", selection: $settings.learningChatProvider) {
+                    ForEach(MeaningSource.llmProviders, id: \.self) { provider in
+                        Text(provider.displayName).tag(provider)
+                    }
+                }
+
+                // Its key — shown here too, since API Keys above only shows the translation provider's
+                if settings.learningChatProvider == .claudeHaiku {
+                    APIKeyField(title: "Anthropic API Key:", key: $settings.claudeApiKey) {
+                        pipeline.updateProvider()
+                    }
+                } else {
+                    APIKeyField(title: "OpenAI API Key:", key: $settings.openAIApiKey) {
+                        pipeline.updateProvider()
+                    }
+                }
+
+                Text(chatKeyStatus)
+                    .font(.caption)
+                    .foregroundStyle(chatKeyIsSaved ? Color.green : Color.orange)
+
+                Text("ใช้ตอบคำถามใน 📚 เรียนรู้คำศัพท์ (💬 ถาม AI) และหาความหมายคำศัพท์ตามบริบทของเกม")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .onAppear { settings.loadApiKeyIfNeeded(for: settings.learningChatProvider) }
+            .onChange(of: settings.learningChatProvider) { _, provider in
+                settings.loadApiKeyIfNeeded(for: provider)
+            }
+
             // Only DeepL Free counts characters (it has a 500K/month limit)
             if settings.selectedProvider == .deeplFree {
                 Section("การใช้งาน DeepL Free") {
@@ -201,6 +233,19 @@ private struct TranslationSettingsTab: View {
             }
         }
         .formStyle(.grouped)
+    }
+
+    private var chatKeyIsSaved: Bool {
+        switch settings.learningChatProvider {
+        case .openAI: return !settings.openAIApiKey.isEmpty
+        default: return !settings.claudeApiKey.isEmpty
+        }
+    }
+
+    private var chatKeyStatus: String {
+        chatKeyIsSaved
+            ? "✓ มี API key ของ \(settings.learningChatProvider.displayName) แล้ว"
+            : "ยังไม่มี API key ของ \(settings.learningChatProvider.displayName) — ใส่ในช่องด้านบน"
     }
 
     private var currentApiKey: String {

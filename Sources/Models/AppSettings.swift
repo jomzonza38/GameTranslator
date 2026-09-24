@@ -247,6 +247,24 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(showWelcomeOnLaunch, forKey: "showWelcomeOnLaunch") }
     }
 
+    /// Which LLM answers questions in the Learning window's chat (T-0025); also preferred
+    /// for word meanings (T-0023). Claude or OpenAI.
+    @Published var learningChatProvider: TranslationProviderType {
+        didSet { defaults.set(learningChatProvider.rawValue, forKey: Self.learningChatProviderKey) }
+    }
+
+    static let learningChatProviderKey = "learningChatProvider"
+
+    /// Stored choice; default = the translation provider if it is Claude/OpenAI, else Claude
+    static func loadLearningChatProvider(_ defaults: UserDefaults, selectedProvider: TranslationProviderType) -> TranslationProviderType {
+        if let raw = defaults.string(forKey: learningChatProviderKey),
+           let stored = TranslationProviderType(rawValue: raw),
+           MeaningSource.llmProviders.contains(stored) {
+            return stored
+        }
+        return MeaningSource.llmProviders.contains(selectedProvider) ? selectedProvider : .claudeHaiku
+    }
+
     /// Panel mode: pointing at a text in the game scrolls the panel to its translation (T-0021)
     @Published var panelFollowsGamePointer: Bool {
         didSet { defaults.set(panelFollowsGamePointer, forKey: Self.panelFollowsGamePointerKey) }
@@ -363,6 +381,9 @@ final class AppSettings: ObservableObject {
         self.showOriginalText = defaults.object(forKey: "showOriginalText") as? Bool ?? false
         self.showSourceThumbnails = Self.loadShowSourceThumbnails(defaults)
         self.panelFollowsGamePointer = Self.loadPanelFollowsGamePointer(defaults)
+        self.learningChatProvider = Self.loadLearningChatProvider(
+            defaults, selectedProvider: TranslationProviderType(rawValue: providerRaw) ?? .googleFree
+        )
         self.showWelcomeOnLaunch = defaults.object(forKey: "showWelcomeOnLaunch") as? Bool ?? true
 
         let modeRaw = defaults.string(forKey: "displayMode") ?? DisplayMode.overlay.rawValue
