@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **Status** | REVIEW |
+| **Status** | DONE |
 | **Type** | feature |
 | **Priority** | P2 |
 | **Version impact** | minor |
@@ -171,7 +171,7 @@ T-0024 (quiz) and T-0025 (AI chat) build on.
 
 **Outcome:** PARTIAL — `[test]`/`[code]`/`[build]` criteria pass; AC-6 and AC-7 pending owner
 **Version:** 1.11.32 → 1.12.0 (minor: new feature)
-**Commit:** not committed (owner asked for all of M6 first, review after)
+**Commit:** `156a639`
 
 ### Acceptance criteria
 | AC | Result | Evidence |
@@ -217,6 +217,12 @@ After `./build.sh`:
 
 ## Review
 
+**2026-09-24 — Cowork audit review: DONE**
+
+- AC-1…AC-5, AC-8 ✅ (tests + diff read: one `add()` in the pipeline, NLTagger + file I/O off the main actor, debounced save, no network/permission API). AC-6, AC-7 ✅ owner confirmed 2026-09-24.
+- Findings (not blocking, → T-0026): overlapping background writes can finish out of order and `hasUnsavedChanges` is cleared before the write finishes; a word extraction still running after "ล้างรายการ" re-creates the game with words only; the game's source language is not stored (used by T-0023/T-0025). Backlog: first load is a synchronous JSON decode on the main actor at the first translation; the open window re-filters/sorts the whole list on every new translation.
+- Changed files match *Files / Modules* (AppDelegate quit-save in T-0022 justified in notes). Stability rules: no new permission/capture API, pipeline change limited to one call.
+
 ## Status history
 | Date | Change | Who | Note |
 |---|---|---|---|
@@ -224,3 +230,4 @@ After `./build.sh`:
 | 2026-09-24 | PLANNED → READY | Cowork | owner answered storage/meaning/chat questions |
 | 2026-09-24 | READY → IN_PROGRESS | Claude Code | started (owner: do all of M6, review after) |
 | 2026-09-24 | IN_PROGRESS → REVIEW | Claude Code | test/code/build ACs pass; AC-6, AC-7 manual pending owner |
+| 2026-09-24 | REVIEW → DONE | Cowork | audit review; owner confirmed manual checks; follow-ups → T-0026 + backlog |

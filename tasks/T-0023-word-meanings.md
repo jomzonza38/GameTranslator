@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **Status** | REVIEW |
+| **Status** | DONE |
 | **Type** | feature |
 | **Priority** | P2 |
 | **Version impact** | minor |
@@ -145,7 +145,7 @@ Learning window lists words and sentences; this task fills in a Thai meaning for
 
 **Outcome:** PARTIAL — `[test]`/`[code]`/`[build]` criteria pass; AC-5 … AC-7 pending owner
 **Version:** 1.12.0 → 1.13.0
-**Commit:** not committed (owner asked for all of M6 first, review after)
+**Commit:** `b8ad367`
 
 ### Acceptance criteria
 | AC | Result | Evidence |
@@ -189,9 +189,16 @@ After `./build.sh`:
 
 ## Review
 
+**2026-09-24 — Cowork audit review: DONE**
+
+- AC-1…AC-4, AC-8 ✅ (MeaningServiceTests; no lookup from `PipelineCoordinator`; keys read in `lookUp`/`explain` or when Settings opens, not at launch). AC-5…AC-7 ✅ owner confirmed 2026-09-24.
+- Findings (→ T-0026): prompts and Google lookups use the *current* source-language setting, not the language the game was collected in — a Japanese game looked up while the setting is English gets `from: en` / "learn English" and the wrong meaning is saved and never re-requested. Low: หยุด then หาความหมาย again lets the old task's `defer` clear `isWorking` while the new batch runs (two batches at once); opening another word while a batch runs silently skips its auto lookup.
+- Changed files match *Files / Modules* (AppDelegate quit-save in T-0022 justified in notes). Stability rules: no new permission/capture API, pipeline change limited to one call.
+
 ## Status history
 | Date | Change | Who | Note |
 |---|---|---|---|
 | 2026-09-24 | → PLANNED | Cowork | created; READY when T-0022 is DONE |
 | 2026-09-24 | PLANNED → IN_PROGRESS | Claude Code | started on the owner's instruction ("do all of M6") while T-0022 is in REVIEW; stacked, uncommitted |
 | 2026-09-24 | IN_PROGRESS → REVIEW | Claude Code | test/code/build ACs pass; AC-5…AC-7 manual pending owner |
+| 2026-09-24 | REVIEW → DONE | Cowork | audit review; owner confirmed manual checks; follow-ups → T-0026 + backlog |

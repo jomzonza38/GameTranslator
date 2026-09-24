@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **Status** | REVIEW |
+| **Status** | DONE |
 | **Type** | feature |
 | **Priority** | P2 |
 | **Version impact** | minor |
@@ -121,7 +121,7 @@ back more often.
 
 **Outcome:** PARTIAL — `[test]`/`[build]` criteria pass; AC-5 pending owner
 **Version:** 1.14.0 → 1.15.0
-**Commit:** not committed (owner asked for all of M6 first, review after)
+**Commit:** `2717f05`
 
 ### Acceptance criteria
 | AC | Result | Evidence |
@@ -162,9 +162,16 @@ After `./build.sh`, once a game has meanings (T-0023):
 
 ## Review
 
+**2026-09-24 — Cowork audit review: DONE**
+
+- AC-1…AC-4, AC-6 ✅ (QuizGeneratorTests incl. old-file compatibility; distractor guarantee follows from the ≥ 4 distinct meanings/translations check). AC-5 ✅ owner confirmed 2026-09-24.
+- Low (backlog): changing the game picker during a quiz keeps the old game's questions and records answers into the new game (no-op).
+- Changed files match *Files / Modules* (AppDelegate quit-save in T-0022 justified in notes). Stability rules: no new permission/capture API, pipeline change limited to one call.
+
 ## Status history
 | Date | Change | Who | Note |
 |---|---|---|---|
 | 2026-09-24 | → PLANNED | Cowork | created; READY when T-0023 is DONE |
 | 2026-09-24 | PLANNED → IN_PROGRESS | Claude Code | started on the owner's instruction ("do all of M6") while T-0023 is in REVIEW; stacked, uncommitted |
 | 2026-09-24 | IN_PROGRESS → REVIEW | Claude Code | test/build ACs pass; AC-5 manual pending owner |
+| 2026-09-24 | REVIEW → DONE | Cowork | audit review; owner confirmed manual checks; follow-ups → T-0026 + backlog |

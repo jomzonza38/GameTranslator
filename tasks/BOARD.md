@@ -4,16 +4,13 @@ Index of all tasks. The **Status line inside each task file is the source of
 truth**; whoever changes a status updates this row in the same step.
 Lifecycle and who may set each status: `WORKFLOW.md` §3.
 
-**Next ID:** T-0026
+**Next ID:** T-0027
 
 ## Active
 
 | ID | Title | Status | Priority | Depends on | Next step by |
 |---|---|---|---|---|---|
-| [T-0022](T-0022-learning-collection-window.md) | Learning window: every sentence and word the app has translated, kept per game | REVIEW | P2 | — | Cowork (review) + owner (AC-6, AC-7 manual) |
-| [T-0023](T-0023-word-meanings.md) | Each word and sentence in the Learning window explains what it means | REVIEW | P2 | T-0022 (in REVIEW) | Cowork (review) + owner (AC-5…AC-7 manual) |
-| [T-0024](T-0024-learning-quiz.md) | Multiple-choice quiz on the words and sentences collected from the game | REVIEW | P2 | T-0023 (in REVIEW) | Cowork (review) + owner (AC-5 manual) |
-| [T-0025](T-0025-ask-ai-about-a-translation.md) | Ask the AI why a sentence was translated that way | REVIEW | P2 | T-0022 (in REVIEW) | Cowork (review) + owner (AC-5, AC-6 manual) |
+| [T-0026](T-0026-learning-data-correctness.md) | Learning data stays correct: per-game language, ordered saves, clean clear | READY | P2 | — | Claude Code |
 
 ## Closed
 
@@ -42,3 +39,7 @@ Lifecycle and who may set each status: `WORKFLOW.md` §3.
 | [T-0018](T-0018-panel-shows-source-thumbnail.md) | In full-screen mode, each panel entry shows where its text came from | DONE | 2026-09-24 | `c47e4ce` | — |
 | [T-0020](T-0020-map-captured-content-to-screen.md) | Outlines and overlay text must sit exactly on the game text | DONE | 2026-09-24 | `6730abe` + `baf4aa9` | — |
 | [T-0021](T-0021-point-at-game-text-scrolls-panel.md) | Pointing at a text in the game brings its translation into view in the panel | DONE | 2026-09-24 | `6dbbafa` | — |
+| [T-0022](T-0022-learning-collection-window.md) | Learning window: every sentence and word the app has translated, kept per game | DONE | 2026-09-24 | `156a639` | T-0026 |
+| [T-0023](T-0023-word-meanings.md) | Each word and sentence in the Learning window explains what it means | DONE | 2026-09-24 | `b8ad367` | T-0026 |
+| [T-0024](T-0024-learning-quiz.md) | Multiple-choice quiz on the words and sentences collected from the game | DONE | 2026-09-24 | `2717f05` | — |
+| [T-0025](T-0025-ask-ai-about-a-translation.md) | Ask the AI why a sentence was translated that way | DONE | 2026-09-24 | `141cba0` | T-0026 |

@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **Status** | REVIEW |
+| **Status** | DONE |
 | **Type** | feature |
 | **Priority** | P2 |
 | **Version impact** | minor |
@@ -138,7 +138,7 @@ answers from an AI that knows the sentence, its Thai translation and the game.
 
 **Outcome:** PARTIAL — `[test]`/`[code]`/`[build]` criteria pass; AC-5 and AC-6 pending owner
 **Version:** 1.13.0 → 1.14.0
-**Commit:** not committed (owner asked for all of M6 first, review after)
+**Commit:** `141cba0`
 
 ### Acceptance criteria
 | AC | Result | Evidence |
@@ -184,9 +184,16 @@ After `./build.sh`:
 
 ## Review
 
+**2026-09-24 — Cowork audit review: DONE**
+
+- AC-1…AC-4, AC-7 ✅ (ChatPromptTests / LearningChatServiceTests; providers and `LLMPrompt` untouched; log lines carry lengths only). AC-5, AC-6 ✅ owner confirmed 2026-09-24.
+- Findings: chat uses the current source-language setting (→ T-0026). Low (backlog): editing the key in "AI สำหรับแชทเรียนรู้" calls `pipeline.updateProvider()` even when it isn't the translation provider's key (re-translates the screen / lifts a pause for no reason); a word's chat sends the word as "Game line" without its example sentence.
+- Changed files match *Files / Modules* (AppDelegate quit-save in T-0022 justified in notes). Stability rules: no new permission/capture API, pipeline change limited to one call.
+
 ## Status history
 | Date | Change | Who | Note |
 |---|---|---|---|
 | 2026-09-24 | → PLANNED | Cowork | created; READY when T-0022 is DONE |
 | 2026-09-24 | PLANNED → IN_PROGRESS | Claude Code | started on the owner's instruction ("do all of M6") while T-0022 is in REVIEW; stacked, uncommitted |
 | 2026-09-24 | IN_PROGRESS → REVIEW | Claude Code | test/code/build ACs pass; AC-5, AC-6 manual pending owner |
+| 2026-09-24 | REVIEW → DONE | Cowork | audit review; owner confirmed manual checks; follow-ups → T-0026 + backlog |
