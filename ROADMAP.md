@@ -26,7 +26,7 @@ From the owner — every task must keep these (details in `CLAUDE.md`):
 | M0 — Workflow | Cowork × Claude Code task system in place | done 2026-09-23 | — |
 | M1 — Stability | Close the gaps found in the 2026-09-23 audits that affect the standing goals | done 2026-09-24 | T-0001 … T-0005 |
 | M2 — Reliability & UX | Errors visible to the user, no request storms, correct placement on every display | done 2026-09-24 | T-0006 … T-0009 |
-| M3 — Providers & settings hygiene | Keys saved cleanly, right cache per provider, no endless retries on a refused key, clean test logs | in review | T-0010 … T-0014 |
+| M3 — Providers & settings hygiene | Keys saved cleanly, right cache per provider, no endless retries on a refused key, clean test logs | in progress | T-0010 … T-0015 |
 | M4 — … | *To be defined by Cowork with the owner* | — | — |
 
 ## Backlog (not yet tasks)

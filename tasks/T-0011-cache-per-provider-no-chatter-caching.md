@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **Status** | REVIEW |
+| **Status** | DONE |
 | **Type** | fix |
 | **Priority** | P2 |
 | **Version impact** | patch |
@@ -157,6 +157,10 @@ Google lines again (from its cache, no delay).
 
 ## Review
 
+**Cowork, 2026-09-24 — owner confirmed AC-4. DONE.**
+- AC-4 ✅: the owner confirmed the on-screen text changed. Log: `09:42:33 Translation provider/language changed (Google Translate (Free)|en)` → a request to Google right away, then `09:42:39 … (Claude Haiku|en)` → a request to Claude right away. Switching DeepL Pro ↔ Claude at 09:36 behaved the same way, and cache hits for Claude came back in 0 ms.
+- Caveat: this re-translation needs a new frame. The screen changed during the test, so it worked. On a static screen it waits until something changes. That is handled in T-0015.
+
 **Cowork, 2026-09-24 — code review passed; waiting for owner's AC-4.**
 
 | AC | Verdict | Note |
@@ -179,3 +183,4 @@ Google lines again (from its cache, no delay).
 | 2026-09-24 | READY → IN_PROGRESS | Claude Code | started (stacked on T-0010, uncommitted — owner asked for all tasks before review) |
 | 2026-09-24 | IN_PROGRESS → REVIEW | Claude Code | test/code/build ACs pass; AC-4 manual pending owner |
 | 2026-09-24 | — | Cowork | code review passed; waiting for owner AC-4 |
+| 2026-09-24 | REVIEW → DONE | Cowork | owner confirmed AC-4 |

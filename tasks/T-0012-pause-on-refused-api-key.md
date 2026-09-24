@@ -2,14 +2,14 @@
 
 | Field | Value |
 |---|---|
-| **Status** | REVIEW |
+| **Status** | REVIEW_FAILED |
 | **Type** | fix |
 | **Priority** | P2 |
 | **Version impact** | patch |
 | **Milestone** | M3 — Providers & settings hygiene |
 | **Depends on** | T-0010 |
 | **Corrects** | — |
-| **Follow-up** | — |
+| **Follow-up** | T-0015 |
 | **Created** | 2026-09-24 by Cowork (code audit v1.11.11 backlog + owner testing) |
 
 ## Objective
@@ -140,6 +140,18 @@ Executed 92 tests, with 0 failures (0 unexpected) in 0.733 (0.778) seconds
 
 ## Review
 
+**Cowork, 2026-09-24 — owner test: AC-3 step 2 failed → REVIEW_FAILED, follow-up T-0015.**
+
+| AC | Verdict | Note |
+|---|---|---|
+| AC-1, AC-2, AC-4 | ✅ | (see code review above) |
+| AC-3 step 1 | ✅ | Log 09:36:17 and 09:39:50: one `HTTP 401` → `⏸ Translation paused`, then 30–40 s of OCR only and no further requests. |
+| AC-3 step 2 | ❌ | At 09:41:07 the real key was saved → `▶︎ Translation resumed`, but no request followed until the owner pressed start again at 09:41:20. The spec expects "translation resumes without restarting". |
+
+- Cause (not a bug in this task's diff): the pipeline runs only when ScreenCaptureKit delivers a new frame (`StreamOutput` drops frames without an image buffer, and SCStream sends none while the screen doesn't change). Clearing the pause resets the state, but nothing happens until the screen changes. A dialog box waiting for a click, which is the main use case, stays untranslated.
+- The same gap affects the 3 s retry after an error and the re-translation after a provider change (T-0011) on a static screen. T-0015 covers all three.
+- The Thai menu message while paused has not been checked with the owner yet. It's included in T-0015's manual test.
+
 **Cowork, 2026-09-24 — code review passed; waiting for owner's AC-3. Edge case found → T-0014.**
 
 | AC | Verdict | Note |
@@ -160,3 +172,4 @@ Executed 92 tests, with 0 failures (0 unexpected) in 0.733 (0.778) seconds
 | 2026-09-24 | PLANNED → IN_PROGRESS | Claude Code | started on owner's instruction ("do all tasks, review after") while T-0010 is still in REVIEW; stacked on T-0010/T-0011, uncommitted |
 | 2026-09-24 | IN_PROGRESS → REVIEW | Claude Code | test/code/build ACs pass; AC-3 manual pending owner |
 | 2026-09-24 | — | Cowork | code review passed; race → T-0014; waiting for owner AC-3 |
+| 2026-09-24 | REVIEW → REVIEW_FAILED | Cowork | AC-3 step 2: no resume on a static screen → T-0015 |

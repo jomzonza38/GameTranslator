@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **Status** | REVIEW |
+| **Status** | DONE |
 | **Type** | fix |
 | **Priority** | P3 |
 | **Version impact** | patch |
@@ -136,9 +136,23 @@ None (timing is hard to reproduce by hand, as the spec says).
 
 ## Review
 
+**Cowork, 2026-09-24 — accepted. DONE.**
+
+| AC | Verdict | Note |
+|---|---|---|
+| AC-1 | ✅ | `providerGeneration` goes up in every `updateProvider()` (key save, provider pick, start). That covers a key change on the same provider, which scope can't see. The decision is a pure `TranslationRefusal.outcome(...)` with 3 tests. |
+| AC-2 | ✅ | The message is built from `requestProvider`, captured before the await. `testPauseMessageNamesTheProviderThatRefused`. |
+| AC-3 | ✅ | 96 tests. |
+
+- Req 2 ✅: `.ignoreOutdated` doesn't set `lastError`, so the menu shows no stale refusal. `.notARefusal` behaves as before.
+- The remaining window is accepted as described in the notes: `translateBatch` reads the provider slightly after the generation is recorded. The worst case is one extra request after the 3 s back-off, and never a wrong pause.
+- Minor, no action: after an ignored outdated refusal, those texts keep `failedAt`, so the new key's first attempt waits up to 3 s. That's acceptable.
+- Process: started while PLANNED (T-0012 still in REVIEW) on the owner's instruction. If T-0012's AC-3 fails in manual testing, its corrective task must keep T-0014's generation check.
+
 ## Status history
 | Date | Change | Who | Note |
 |---|---|---|---|
 | 2026-09-24 | → PLANNED | Cowork | from T-0012 review; READY when T-0012 is DONE |
 | 2026-09-24 | PLANNED → IN_PROGRESS | Claude Code | started on the owner's direct instruction ("ทำ T-0014") while T-0012 is in REVIEW (committed `2cd55eb`) |
 | 2026-09-24 | IN_PROGRESS → REVIEW | Claude Code | all ACs pass (no manual ACs) |
+| 2026-09-24 | REVIEW → DONE | Cowork | all ACs pass |

@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **Status** | REVIEW |
+| **Status** | DONE |
 | **Type** | fix |
 | **Priority** | P2 |
 | **Version impact** | patch |
@@ -161,6 +161,9 @@ change per character.
 
 ## Review
 
+**Cowork, 2026-09-24 — owner confirmed AC-4. DONE.**
+- AC-4 ✅: the owner pasted the real key with a trailing space, and on reopening Settings the key was still there. Log from 09:41:07: `▶︎ Translation resumed`, then real requests succeeded (`"test" → "ทดสอบ"`, 1.2 s) with no 401. The key was trimmed correctly and survived stop/start.
+
 **Cowork, 2026-09-24 — code review passed; waiting for owner's AC-4.**
 
 | AC | Verdict | Note |
@@ -180,3 +183,4 @@ change per character.
 | 2026-09-24 | READY → IN_PROGRESS | Claude Code | started (owner: do T-0010…T-0013, review after) |
 | 2026-09-24 | IN_PROGRESS → REVIEW | Claude Code | AC-3 met by shared sessions instead of invalidation (crash risk) — Cowork to confirm; AC-4 manual |
 | 2026-09-24 | — | Cowork | code review passed; AC-3 alternative accepted (spec amended); waiting for owner AC-4 |
+| 2026-09-24 | REVIEW → DONE | Cowork | owner confirmed AC-4 (log 09:41–09:42) |
