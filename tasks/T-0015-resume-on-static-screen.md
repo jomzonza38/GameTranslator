@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **Status** | REVIEW |
+| **Status** | DONE |
 | **Type** | fix |
 | **Priority** | P2 |
 | **Version impact** | patch |
@@ -189,9 +189,49 @@ translated, (b) paused with `sk-test`. Expected: about the same as before this t
 
 ## Review
 
+**Cowork, 2026-09-24 — AC-4 decided with measurements. DONE.**
+
+Owner's measurements (`top`, v1.11.25): not started **0 %** · capturing a static screen, all translated **~43 %** · paused **~43 %**.
+`sample GameTranslator 10` while paused (`~/Desktop/gt-sample.txt`, 10:17):
+- The `…GameTranslator.capture` queue is busy in `StreamOutput.stream` → **`CIContext()` created and destroyed for every frame** (Metal context init / `~MetalContext` / `createCGImage`). ScreenCaptureKit keeps delivering frames with image buffers even though the window is static.
+- Vision OCR (`OCRService.recognizeText` → `VNCRImageReaderDetector`) runs on every delivered frame, even while paused.
+- The code T-0015 added barely appears (`runPipeline`/`drainPipeline` ≈ 100 samples, mostly waiting on OCR). No re-run loop shows up.
+
+→ The ~43 % comes from the existing per-frame path (audit v1.11.11 items 15–16), not from this task. **AC-4 ✅** (no extra load added). The load itself is too high for a MacBook Air, so it becomes **T-0016**.
+
+**Cowork, 2026-09-24 — owner test on v1.11.25: AC-3 ✅, AC-4 not decided yet (no baseline).**
+
+| AC | Verdict | Evidence |
+|---|---|---|
+| AC-3 step 1 | ✅ | `10:00:44` one `HTTP 401` → `⏸ paused`. No request for 37 s. The owner confirmed the menu shows `⚠️ หยุดแปลชั่วคราว: Claude Haiku ไม่รับ API Key — …`. |
+| AC-3 step 2 | ✅ | `10:01:28.354 ▶︎ resumed` → `10:01:28.372 Translating…` (18 ms later) → `✓ "Jom" → "จอม"`, with no start pressed and the window untouched. |
+| AC-3 step 3 | ✅ | `10:01:49.754 provider changed (Google…)` → `10:01:49.956 Translating…` → translated at 10:01:50.5. |
+| AC-4 | ⏳ | The owner reports **≈ 40 % CPU** both when translating and when not translating. The AC needs "about the same as before this task", and there is no measurement from before. The code review found no re-run loop, so the first step is to measure: (1) app open but not started, (2) started on a static screen with everything translated, (3) paused. If (1) is already ~40 %, the cause is outside the pipeline. If only (2)/(3) are high, compare with v1.11.24 (`5ea1904`). |
+
+- The resumes at 10:01:21 and 10:01:25 came from T-0010's pause-save while editing the key (a partial key, then an empty one). Each made exactly one request and paused again. Expected.
+- Also in this log, not part of this task: the first OCR after the app launched took **73.6 s** (`OCR [Region 1]: 1 texts in 73652ms`, 09:59:30 → 10:00:44). The same happened at 09:32 (74 s). Both times it was the first capture after launching a new build. → ROADMAP backlog.
+
+**Cowork, 2026-09-24 — code review passed; waiting for owner's AC-3 / AC-4.**
+
+| AC | Verdict | Note |
+|---|---|---|
+| AC-1 | ✅ | All re-runs go through `processFrame(lastFrame)`, so they get the same guards as a real frame (`isRunning`, `isProcessing` → `pendingFrame`). The task checks `sessions.isCurrent`. `tearDown()` cancels `rerunTask` and drops `lastFrame`. Covers all 4 triggers: `updateProvider()`, `$sourceLanguage`, `$gameProfiles` and `planRerun`. |
+| AC-2 | ✅ | `StaticScreenRerun.delay` returns nil when paused or when nothing on screen lacks a translation. At most one `rerunTask` at a time; each new frame replaces it. Checked for a loop: after a reset a text becomes stable on the second run of the same frame (`previousFrameTexts`), then it is either translated (cached) or gets `failedAt` — including a chatter/no-result reply (T-0011) and an outdated refusal (T-0014). No path leaves a stable, untranslated text with `failedAt == nil`, so the 0.5 s re-run cannot repeat forever. |
+| AC-3, AC-4 | ⏳ owner | The owner's log is still from v1.11.24 (last line 09:49). |
+| AC-5 | ✅ | 103 tests. `StaticScreenRerunTests` (7) cover paused/idle/retry timing. |
+
+- Intended behaviour: on a static screen with network errors (not a pause), a failed text is retried every 3 s, the same rate as on a moving screen (Req 2).
+- `$gameProfiles` changes only on user edits (title and glossary), so the sink does not cause frequent re-runs.
+- Minor, no action (cosmetic): `pendingGlossaryAppliesAt` was inserted between `updateGlossary`'s doc comment and the function, so that doc comment now attaches to the property. Fix it the next time this file is touched.
+- Changed-file scope: `TranslationContextBuilder.swift` is outside *Files / Modules* but justified in the notes (one read-only accessor). ✅
+- When AC-3 passes, it also covers T-0012 AC-3 (menu message + resume without restarting). The owner can close both together.
+
 ## Status history
 | Date | Change | Who | Note |
 |---|---|---|---|
 | 2026-09-24 | → READY | Cowork | corrective for T-0012 AC-3 step 2 (owner test 09:41) |
 | 2026-09-24 | READY → IN_PROGRESS | Claude Code | started |
 | 2026-09-24 | IN_PROGRESS → REVIEW | Claude Code | code/build ACs pass; AC-3, AC-4 manual pending owner |
+| 2026-09-24 | — | Cowork | code review passed; waiting for owner AC-3, AC-4 |
+| 2026-09-24 | — | Cowork | owner test: AC-3 pass; AC-4 needs a baseline measurement (≈40 % CPU reported) |
+| 2026-09-24 | REVIEW → DONE | Cowork | AC-3 owner-confirmed; AC-4: load predates this task (sample) → T-0016 |

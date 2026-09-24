@@ -26,8 +26,8 @@ From the owner — every task must keep these (details in `CLAUDE.md`):
 | M0 — Workflow | Cowork × Claude Code task system in place | done 2026-09-23 | — |
 | M1 — Stability | Close the gaps found in the 2026-09-23 audits that affect the standing goals | done 2026-09-24 | T-0001 … T-0005 |
 | M2 — Reliability & UX | Errors visible to the user, no request storms, correct placement on every display | done 2026-09-24 | T-0006 … T-0009 |
-| M3 — Providers & settings hygiene | Keys saved cleanly, right cache per provider, no endless retries on a refused key, clean test logs | in progress | T-0010 … T-0015 |
-| M4 — … | *To be defined by Cowork with the owner* | — | — |
+| M3 — Providers & settings hygiene | Keys saved cleanly, right cache per provider, no endless retries on a refused key, clean test logs | done 2026-09-24 | T-0010 … T-0015 (T-0012 corrected by T-0015) |
+| M4 — Performance & first use | Near-idle CPU on a static screen; no silent minute-long wait on the first OCR | active | T-0016, T-0017 |
 
 ## Backlog (not yet tasks)
 
@@ -83,3 +83,6 @@ T-0007 · batch fallback request storm → T-0008 · multi-monitor coordinates �
 - From T-0011 review: a line the LLM always answers with chatter is retried every 3 s
   for as long as it is on screen (one paid request each time). Consider a growing
   back-off or a retry cap for chatter.
+- → T-0017 · First OCR after launching a new build takes ~74 s.
+- → T-0016 · CPU ≈ 43 % on a static screen (`CIContext` per frame + OCR on every frame).
+

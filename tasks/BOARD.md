@@ -4,13 +4,14 @@ Index of all tasks. The **Status line inside each task file is the source of
 truth**; whoever changes a status updates this row in the same step.
 Lifecycle and who may set each status: `WORKFLOW.md` §3.
 
-**Next ID:** T-0016
+**Next ID:** T-0018
 
 ## Active
 
 | ID | Title | Status | Priority | Depends on | Next step by |
 |---|---|---|---|---|---|
-| [T-0015](T-0015-resume-on-static-screen.md) | Resuming, switching provider and retrying must work on a static screen | REVIEW (committed `ce43c16`) | P2 | — (corrects T-0012) | Cowork (review) + owner (AC-3, AC-4 manual) |
+| [T-0016](T-0016-idle-cpu-while-capturing.md) | A static screen must cost almost no CPU while capturing | READY | P2 | — | Claude Code |
+| [T-0017](T-0017-slow-first-ocr-after-new-build.md) | Find out why the first OCR after a new build takes ~74 s | READY | P2 | — | Claude Code |
 
 ## Closed
 
@@ -32,3 +33,4 @@ Lifecycle and who may set each status: `WORKFLOW.md` §3.
 | [T-0010](T-0010-api-key-fields-save-cleanly.md) | API key fields must save cleanly: trimmed, not on every keystroke, no session leak | DONE | 2026-09-24 | `0f15d05` | — |
 | [T-0011](T-0011-cache-per-provider-no-chatter-caching.md) | Cached translations must belong to the provider and language that made them | DONE | 2026-09-24 | `5beb3ad` | — |
 | [T-0012](T-0012-pause-on-refused-api-key.md) | Stop retrying while the API key is refused, and say so | REVIEW_FAILED | 2026-09-24 | `2cd55eb` | T-0015 |
+| [T-0015](T-0015-resume-on-static-screen.md) | Resuming, switching provider and retrying must work on a static screen | DONE | 2026-09-24 | `ce43c16` | — |
