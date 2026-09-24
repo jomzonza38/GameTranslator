@@ -54,6 +54,10 @@ final class PipelineCoordinator: ObservableObject {
     /// Recent lines and glossary sent to LLM providers
     private let contextBuilder = TranslationContextBuilder()
 
+    /// Provider + source language the on-screen translations came from (nil = not
+    /// known yet). When it changes, visible text is translated again.
+    private var translationScope: String?
+
     private var cancellables = Set<AnyCancellable>()
 
     // MARK: - Init
@@ -107,6 +111,7 @@ final class PipelineCoordinator: ObservableObject {
         stats = PipelineStats()
         globalState.reset()
         regionStates.removeAll()
+        translationScope = nil
 
         // Initialize per-region states
         for region in settings.captureRegions {
@@ -359,6 +364,7 @@ final class PipelineCoordinator: ObservableObject {
         let pipelineStart = CFAbsoluteTimeGetCurrent()
 
         await applyGlossaryChangesIfNeeded()
+        applyTranslationScopeChangeIfNeeded()
 
         do {
             // Step 1: OCR settings
@@ -597,8 +603,17 @@ final class PipelineCoordinator: ObservableObject {
             guard !Task.isCancelled else { return }
 
             // Iterate in on-screen order so the context reads naturally
+            let now = CFAbsoluteTimeGetCurrent()
             for text in texts {
-                guard let translation = translations[text] else { continue }
+                guard let translation = translations[text] else {
+                    // No real translation (the LLM answered with chatter): not cached —
+                    // retry after the normal back-off instead of every frame
+                    for work in works where work.textsToTranslate.contains(text) {
+                        work.state.failedAt[text] = now
+                    }
+                    GameLog.log("\u{2717} No translation for \"\(text)\" — will retry")
+                    continue
+                }
                 for work in works where work.textsToTranslate.contains(text) {
                     work.state.cachedTranslations[text] = translation
                     work.state.failedAt.removeValue(forKey: text)
@@ -658,6 +673,22 @@ final class PipelineCoordinator: ObservableObject {
         guard contextBuilder.updateGlossary(glossary, now: CFAbsoluteTimeGetCurrent()) else { return }
         await resetTranslationCaches()
         GameLog.log("Glossary updated (\(contextBuilder.appliedGlossary.count) terms) — re-translating on-screen text")
+    }
+
+    /// Provider or source language changed (Settings, while running): drop the
+    /// on-screen translations so visible text is translated again by the new one.
+    /// The service cache is keyed by provider + language, so it needs no clearing.
+    private func applyTranslationScopeChangeIfNeeded() {
+        let scope = translationService.translationScope
+        defer { translationScope = scope }
+        guard let previous = translationScope, previous != scope else { return }
+
+        globalState.reset()
+        for state in regionStates.values {
+            state.reset()
+        }
+        contextBuilder.clearRecentLines()
+        GameLog.log("Translation provider/language changed (\(scope)) — re-translating on-screen text")
     }
 
     /// Forget all cached translations so visible text is translated again

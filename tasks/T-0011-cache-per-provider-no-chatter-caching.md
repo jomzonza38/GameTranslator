@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **Status** | READY |
+| **Status** | REVIEW |
 | **Type** | fix |
 | **Priority** | P2 |
 | **Version impact** | patch |
@@ -76,7 +76,82 @@ as if it were a translation.
 
 ## Implementation Notes
 
+- **Choice for Req 1: key the cache *and* reset what's on screen.**
+  - `TranslationService` cache entries are keyed by `provider name | source language
+    code` + text, so a lookup never returns another provider's or language's
+    translation — even when not running. Switching back to a previous provider still
+    reuses its results. Clearing on every switch would throw that away.
+  - On screen: `PipelineCoordinator` remembers the scope of its translations and checks
+    it each frame, next to the glossary check. When it changes (Settings → provider or
+    game language while running), it resets the per-region states (on-screen cache,
+    stale cache, similar-text reuse, text tracker) and the recent-lines context. Visible
+    text is then translated again by the new provider within about 2 frames (the
+    stability gate needs one frame).
+- **Chatter signal (Req 2):**
+  - `LLMPrompt.translation(fromReply:source:)` returns `nil` for an empty or chatter
+    reply. `sanitize` keeps its old contract (`?? source`), so existing callers and
+    tests are unchanged.
+  - New protocol method `translateBatchMarkingFallbacks(...) -> [String?]`: the default
+    (Google, DeepL) wraps `translateBatch`; `LLMChatProvider` implements it and returns
+    `nil` per chatter line. Its `translateBatch(context:)` still returns the source text
+    for those lines (behaviour unchanged for other callers).
+  - `TranslationService` uses the marking variant and **neither caches nor returns**
+    `nil` lines.
+  - In `translatePending`, a text with no translation now gets `failedAt = now`, so it
+    is retried after the normal 3 s back-off instead of on every frame. It is not added
+    to history/context and is logged `✗ No translation for "…" — will retry`. This also
+    closes an older gap: previously any missing result was retried every frame.
+- **Testability:** the cache + provider part of `translateBatch` became
+  `static TranslationService.translateBatch(_:with:cache:sourceLanguage:targetLanguage:context:beforeRequest:)`
+  (no `AppSettings`). The DeepL Free limit check is passed in as `beforeRequest`, so it
+  still runs only when a request is needed.
+- **Removed:** `TranslationService.translate(_:)` (single text). It had no callers and
+  used the old unscoped cache key, so leaving it would have kept the bug reachable.
+- **Req 3:** glossary exact matches (`contextBuilder.fixedTranslation`), glossary change
+  handling, the stale grace period and similar-text reuse are unchanged. After a
+  provider/language change they start empty for the new scope, which is intended.
+
 ## Result
+
+**Outcome:** PARTIAL — all `[test]`/`[code]`/`[build]` criteria pass; AC-4 pending owner
+**Version:** 1.11.20 → 1.11.21
+**Commit:** not committed (owner asked for T-0010…T-0013 first, review after)
+
+### Acceptance criteria
+| AC | Result | Evidence |
+|---|---|---|
+| AC-1 | ✅ pass | `TranslationServiceCacheTests`: `testCacheOfOneProviderIsNotUsedForAnother` (Claude gets its own request, not Google's cached line), `testSameProviderUsesItsCache`, `testCacheIsPerSourceLanguage`. |
+| AC-2 | ✅ pass | `testChatterReplyIsNotCachedAndIsAskedAgain` (2 calls, nothing returned), `testChatterForOneLineOfABatchKeepsTheOthers` (other line cached), `testLLMTranslateBatchStillShowsSourceForChatter`. |
+| AC-3 | ✅ pass | `PipelineCoordinator.applyTranslationScopeChangeIfNeeded()` (called at the start of every frame) resets `globalState`, every `regionStates` value and recent lines when `translationService.translationScope` changes. |
+| AC-4 | ⏳ pending owner | Steps below. |
+| AC-5 | ✅ pass | `Executed 89 tests, with 0 failures`, `** TEST SUCCEEDED **`, `** BUILD SUCCEEDED **`. |
+
+### Build & test
+```
+Executed 89 tests, with 0 failures (0 unexpected) in 0.420 (0.466) seconds
+** TEST SUCCEEDED **
+** BUILD SUCCEEDED **
+```
+
+### Changed files (this task only, on top of T-0010)
+```
+ Resources/Info.plist                         | 1.11.21
+ Sources/Providers/TranslationProvider.swift  | translateBatchMarkingFallbacks (+ default)
+ Sources/Providers/LLMChatProvider.swift      | nil for chatter; LLMPrompt.translation(fromReply:)
+ Sources/Services/TranslationService.swift    | scoped cache key, static testable batch, no caching of nil
+ Sources/Services/PipelineCoordinator.swift   | scope-change reset; missing result → back-off
+ Tests/TranslationServiceCacheTests.swift     | (new, 6 tests)
+```
+
+### Manual checks for the owner
+**AC-4** — after `./build.sh`: translate a game with Google Free, then (still running)
+Settings → Claude Haiku. Expected: within a few seconds the visible lines change to
+Claude's translation; the log shows `Translation provider/language changed (Claude
+Haiku|en) — re-translating on-screen text`. Switching back to Google Free shows the
+Google lines again (from its cache, no delay).
+
+### Proposed follow-ups
+- none
 
 ---
 
@@ -86,3 +161,5 @@ as if it were a translation.
 | Date | Change | Who | Note |
 |---|---|---|---|
 | 2026-09-24 | → READY | Cowork | created for M3 |
+| 2026-09-24 | READY → IN_PROGRESS | Claude Code | started (stacked on T-0010, uncommitted — owner asked for all tasks before review) |
+| 2026-09-24 | IN_PROGRESS → REVIEW | Claude Code | test/code/build ACs pass; AC-4 manual pending owner |

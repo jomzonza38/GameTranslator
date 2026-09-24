@@ -16,10 +16,17 @@ extension LLMChatProvider {
         try await translateBatch(texts, from: from, to: to, context: .basic(from: from))
     }
 
+    /// Chatter replies fall back to the source text (shown as-is)
     func translateBatch(_ texts: [String], from: String, to: String, context: TranslationContext) async throws -> [String] {
+        let results = try await translateBatchMarkingFallbacks(texts, from: from, to: to, context: context)
+        return zip(results, texts).map { $0 ?? $1 }
+    }
+
+    /// `nil` for lines where the model answered with chatter instead of a translation
+    func translateBatchMarkingFallbacks(_ texts: [String], from: String, to: String, context: TranslationContext) async throws -> [String?] {
         guard !texts.isEmpty else { return [] }
         if texts.count == 1 {
-            return [try await translateOne(texts[0], context: context)]
+            return [try await translateOneMarkingFallback(texts[0], context: context)]
         }
 
         let combined = LLMPrompt.numbered(texts)
@@ -36,7 +43,7 @@ extension LLMChatProvider {
                 maxTokens: 2000
             )
             if let results = LLMPrompt.parseNumbered(reply, count: texts.count) {
-                return zip(results, texts).map { LLMPrompt.sanitize($0, source: $1) }
+                return zip(results, texts).map { LLMPrompt.translation(fromReply: $0, source: $1) }
             }
             // Reply couldn't be matched to the lines — translate them one by one
         } catch {
@@ -48,23 +55,27 @@ extension LLMChatProvider {
     }
 
     func translateOne(_ text: String, context: TranslationContext) async throws -> String {
+        try await translateOneMarkingFallback(text, context: context) ?? text
+    }
+
+    private func translateOneMarkingFallback(_ text: String, context: TranslationContext) async throws -> String? {
         let reply = try await complete(
             system: LLMPrompt.system(batch: false, context: context),
             user: text,
             maxTokens: 500
         )
-        return LLMPrompt.sanitize(reply, source: text)
+        return LLMPrompt.translation(fromReply: reply, source: text)
     }
 
-    private func translateEach(_ texts: [String], context: TranslationContext) async throws -> [String] {
-        try await withThrowingTaskGroup(of: (Int, String).self) { group in
+    private func translateEach(_ texts: [String], context: TranslationContext) async throws -> [String?] {
+        try await withThrowingTaskGroup(of: (Int, String?).self) { group in
             for (index, text) in texts.enumerated() {
                 group.addTask {
-                    let translation = try await self.translateOne(text, context: context)
+                    let translation = try await self.translateOneMarkingFallback(text, context: context)
                     return (index, translation)
                 }
             }
-            var results = Array(repeating: "", count: texts.count)
+            var results = [String?](repeating: nil, count: texts.count)
             for try await (index, translation) in group {
                 results[index] = translation
             }
@@ -160,6 +171,12 @@ enum LLMPrompt {
     /// Clean a model reply for one line. If the model answered with chatter instead of a
     /// translation (asking for context, apologizing, explaining), fall back to the source text.
     static func sanitize(_ reply: String, source: String) -> String {
+        translation(fromReply: reply, source: source) ?? source
+    }
+
+    /// The cleaned translation in a model reply, or nil when the reply is empty or
+    /// reads like chatter — then there is no translation to show or cache.
+    static func translation(fromReply reply: String, source: String) -> String? {
         var text = reply.trimmingCharacters(in: .whitespacesAndNewlines)
 
         if let prefix = text.range(of: #"^\[\d+\]\s*"#, options: .regularExpression) {
@@ -174,7 +191,7 @@ enum LLMPrompt {
         }
 
         if text.isEmpty || looksLikeChatter(text, source: source) {
-            return source
+            return nil
         }
         return text
     }

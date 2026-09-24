@@ -25,6 +25,11 @@ protocol TranslationProvider {
     /// Providers that can't use context fall back to `translateBatch(_:from:to:)`.
     func translateBatch(_ texts: [String], from: String, to: String, context: TranslationContext) async throws -> [String]
 
+    /// Like `translateBatch(_:from:to:context:)`, but `nil` where the provider produced
+    /// no real translation (an LLM that answered with chatter). Such results must not be
+    /// cached as translations. Default: every result is a real translation.
+    func translateBatchMarkingFallbacks(_ texts: [String], from: String, to: String, context: TranslationContext) async throws -> [String?]
+
     /// Open the HTTPS connection ahead of the first request (DNS + TLS take
     /// ~100-300 ms), so the first translation arrives sooner.
     func warmUp()
@@ -53,6 +58,10 @@ struct TranslationContext {
 // Default batch implementation
 extension TranslationProvider {
     func warmUp() {}
+
+    func translateBatchMarkingFallbacks(_ texts: [String], from: String, to: String, context: TranslationContext) async throws -> [String?] {
+        try await translateBatch(texts, from: from, to: to, context: context).map { Optional($0) }
+    }
 
     func translateBatch(_ texts: [String], from: String, to: String, context: TranslationContext) async throws -> [String] {
         try await translateBatch(texts, from: from, to: to)
