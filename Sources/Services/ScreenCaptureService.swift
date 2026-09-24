@@ -2,6 +2,7 @@ import Foundation
 import ScreenCaptureKit
 import CoreGraphics
 import CoreMedia
+import zlib
 
 /// Why capture ended without the app asking for it
 enum CaptureStopReason {
@@ -13,7 +14,10 @@ enum CaptureStopReason {
 
 /// Delegate to receive captured frames
 protocol ScreenCaptureDelegate: AnyObject {
-    func screenCaptureService(_ service: ScreenCaptureService, didCaptureFrame image: CGImage, contentRect: CGRect)
+    /// `image` is nil when the frame has exactly the same pixels as the previous one
+    /// (ScreenCaptureKit keeps sending frames for a static window); `fingerprint`
+    /// identifies the pixels either way.
+    func screenCaptureService(_ service: ScreenCaptureService, didCaptureFrame image: CGImage?, fingerprint: UInt64, contentRect: CGRect)
     /// Capture ended on its own — not through stopCapture(). Called at most once per session.
     func screenCaptureService(_ service: ScreenCaptureService, didStopUnexpectedly reason: CaptureStopReason)
 }
@@ -28,6 +32,42 @@ struct WindowGoneDetector {
     mutating func record(windowExists: Bool) -> Bool {
         misses = windowExists ? 0 : misses + 1
         return misses >= threshold
+    }
+}
+
+/// Identifies a frame's pixels: CRC-32 and Adler-32 of every pixel row (row padding
+/// excluded) plus the size. Exact — one changed pixel changes it — and cheap
+/// (~1 ms for a 2880×1800 frame).
+enum FrameFingerprint {
+    static func of(_ pixelBuffer: CVPixelBuffer) -> UInt64? {
+        guard !CVPixelBufferIsPlanar(pixelBuffer),
+              CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly) == kCVReturnSuccess else { return nil }
+        defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly) }
+        guard let base = CVPixelBufferGetBaseAddress(pixelBuffer) else { return nil }
+        return of(
+            bytes: UnsafeRawPointer(base),
+            width: CVPixelBufferGetWidth(pixelBuffer),
+            height: CVPixelBufferGetHeight(pixelBuffer),
+            bytesPerRow: CVPixelBufferGetBytesPerRow(pixelBuffer),
+            bytesPerPixel: 4 // kCVPixelFormatType_32BGRA
+        )
+    }
+
+    static func of(bytes: UnsafeRawPointer, width: Int, height: Int, bytesPerRow: Int, bytesPerPixel: Int) -> UInt64 {
+        var crc = crc32(0, nil, 0)
+        var adler = adler32(0, nil, 0)
+        var size = [UInt32(truncatingIfNeeded: width), UInt32(truncatingIfNeeded: height)]
+        size.withUnsafeMutableBytes { raw in
+            let pointer = raw.baseAddress!.assumingMemoryBound(to: Bytef.self)
+            crc = crc32(crc, pointer, uInt(raw.count))
+        }
+        let rowLength = uInt(width * bytesPerPixel)
+        for row in 0..<height {
+            let pointer = bytes.advanced(by: row * bytesPerRow).assumingMemoryBound(to: Bytef.self)
+            crc = crc32(crc, pointer, rowLength)
+            adler = adler32(adler, pointer, rowLength)
+        }
+        return UInt64(crc & 0xFFFF_FFFF) << 32 | UInt64(adler & 0xFFFF_FFFF)
     }
 }
 
@@ -142,9 +182,9 @@ final class ScreenCaptureService: NSObject, @unchecked Sendable {
         // The delegate hears when ScreenCaptureKit stops the stream on its own
         let stream = SCStream(filter: filter, configuration: config, delegate: self)
 
-        let output = StreamOutput { [weak self] image in
+        let output = StreamOutput { [weak self] image, fingerprint in
             guard let self, self.sessionLock.withLock({ self.starts.isCurrent(generation) }) else { return }
-            self.delegate?.screenCaptureService(self, didCaptureFrame: image, contentRect: window.frame)
+            self.delegate?.screenCaptureService(self, didCaptureFrame: image, fingerprint: fingerprint, contentRect: window.frame)
         }
 
         try stream.addStreamOutput(output, type: .screen, sampleHandlerQueue: captureQueue)
@@ -288,10 +328,17 @@ extension ScreenCaptureService: SCStreamDelegate {
 // MARK: - Stream Output Handler
 
 private final class StreamOutput: NSObject, SCStreamOutput, @unchecked Sendable {
-    private let onFrame: (CGImage) -> Void
+    /// (image, fingerprint) — image is nil when the pixels equal the previous frame's
+    private let onFrame: (CGImage?, UInt64) -> Void
     private var lastFrameTime: CFAbsoluteTime = 0
+    private var lastFingerprint: UInt64?
+    /// Fallback fingerprints for frames that couldn't be read (always "new")
+    private var unreadableFrameCount: UInt64 = 0
+    /// One context for the stream's lifetime — creating a CIContext per frame was the
+    /// biggest CPU cost while capturing (T-0016). Only used on the capture queue.
+    private let ciContext = CIContext(options: [.cacheIntermediates: false])
 
-    init(onFrame: @escaping (CGImage) -> Void) {
+    init(onFrame: @escaping (CGImage?, UInt64) -> Void) {
         self.onFrame = onFrame
     }
 
@@ -305,10 +352,24 @@ private final class StreamOutput: NSObject, SCStreamOutput, @unchecked Sendable 
 
         guard let pixelBuffer = sampleBuffer.imageBuffer else { return }
 
-        let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
-        let context = CIContext()
-        guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else { return }
+        let fingerprint: UInt64
+        if let computed = FrameFingerprint.of(pixelBuffer) {
+            fingerprint = computed
+        } else {
+            unreadableFrameCount += 1
+            fingerprint = UInt64.max - unreadableFrameCount
+        }
 
-        onFrame(cgImage)
+        // Same pixels as the previous frame: skip the image conversion
+        if fingerprint == lastFingerprint {
+            onFrame(nil, fingerprint)
+            return
+        }
+
+        let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+        guard let cgImage = ciContext.createCGImage(ciImage, from: ciImage.extent) else { return }
+
+        lastFingerprint = fingerprint
+        onFrame(cgImage, fingerprint)
     }
 }

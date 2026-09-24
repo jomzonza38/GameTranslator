@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **Status** | READY |
+| **Status** | REVIEW |
 | **Type** | fix |
 | **Priority** | P2 |
 | **Version impact** | patch |
@@ -77,7 +77,94 @@ MacBook Air. It should be close to idle. It was 0 % when not capturing.
 
 ## Implementation Notes
 
+- **Hot path 1 — `CIContext` per frame (AC-1):** `StreamOutput` now owns **one**
+  `CIContext` for the stream's lifetime. It is used only on the capture queue.
+- **Hot path 2 — OCR on every frame:** frames are skipped in two steps.
+  1. **Capture queue:** `FrameFingerprint.of(pixelBuffer)` is a CRC-32 + Adler-32
+     of every pixel row (row padding excluded) plus the size. It is **exact** — one
+     changed pixel changes it — so a single new character of typewriter text is never
+     missed. Measured **~2.9 ms per 2880×1800 frame ≈ 1.8 % of one core at 6 FPS**
+     (zlib, hardware-accelerated). If the pixels equal the previous frame's, the image
+     is **not converted to a `CGImage`**: the delegate receives `image: nil` plus the
+     fingerprint.
+  2. **Coordinator:** `FrameChangeFilter` (pure, unit-tested) remembers the
+     fingerprints of the last 8 **processed** frames. A frame is skipped when its
+     fingerprint is among them **and** the window hasn't moved **and** no text is
+     waiting to become stable. Remembering several frames, not just the last one,
+     also covers things that blink between a few states: TextEdit's caret (present in
+     AC-3's test window) or a game's "▼ next" arrow.
+- **Why "text waiting to become stable" forces processing:** the stability gate needs
+  the same text in two runs before it translates. When new text appears, the next
+  identical frames are therefore still processed (latency as before, Req 2) until it
+  is translated. `isWaitingForStableText` comes from `planRerun` and is false while
+  paused.
+- **Why a moved window forces processing:** the overlay only repositions when the
+  pipeline runs (`OverlayWindowController.windowTrackingTimer` is never started). So
+  a frame with the same pixels but a different `currentWindowFrame` is processed.
+- **"Processed" is recorded when a frame actually runs** (in `drainPipeline`), not when
+  it is queued. A frame that was queued and then replaced before running is never
+  marked as seen.
+- **T-0015 re-runs** call `processFrame(lastFrame)` directly and bypass the filter.
+  Paused static screen: frames are skipped, and T-0015 schedules nothing, so the app
+  is idle apart from receiving and fingerprinting frames.
+- **Also:** `OCRService.cleanOCRText` built an `NSRegularExpression` for every
+  recognised line; it is now a `static let`.
+- **Not measured here:** the CPU of the running app (AC-3). Launching a build other
+  than the installed one would ask for Screen Recording permission (stability rule
+  1), so the owner measures it after `./build.sh`. Expected per static frame: receive
+  + fingerprint (~3 ms), no image conversion, no OCR.
+
 ## Result
+
+**Outcome:** PARTIAL — `[code]`/`[test]`/`[build]` criteria pass; AC-3 and AC-4 pending owner
+**Version:** 1.11.25 → 1.11.26
+**Commit:** not committed (owner asked for T-0016 and T-0017 first, review after)
+
+### Acceptance criteria
+| AC | Result | Evidence |
+|---|---|---|
+| AC-1 | ✅ pass | `StreamOutput.ciContext` created once per stream; no `CIContext()` in the per-frame path. Identical frames skip `createCGImage` entirely. |
+| AC-2 | ✅ pass | `FrameChangeFilterTests` (8): unchanged → skip; changed / moved window / work waiting → process; blink between states → skip; capacity; reset. `FrameFingerprintTests` (4): same pixels, one changed pixel, row padding ignored, size. |
+| AC-3 | ⏳ pending owner | Steps below. |
+| AC-4 | ⏳ pending owner | Steps below. |
+| AC-5 | ✅ pass | `Executed 115 tests, with 0 failures`, `** TEST SUCCEEDED **`, `** BUILD SUCCEEDED **`. |
+
+### Build & test
+```
+Executed 115 tests, with 0 failures (0 unexpected)
+** TEST SUCCEEDED **
+** BUILD SUCCEEDED **
+fingerprint benchmark: 2.94 ms / 2880×1800 frame (crc32 + adler32)
+```
+
+### Changed files
+```
+ Resources/Info.plist                         | 1.11.26
+ Sources/Services/ScreenCaptureService.swift  | FrameFingerprint, shared CIContext, image nil for identical frames
+ Sources/Services/PipelineCoordinator.swift   | CapturedFrame, FrameChangeFilter, handleCapturedFrame, isWaitingForStableText
+ Sources/Services/OCRService.swift            | regex built once
+ Tests/FrameSkippingTests.swift               | (new, 12 tests)
+```
+
+### Manual checks for the owner
+After `./build.sh`:
+
+**AC-3** — TextEdit with a few English words, start, let it translate, don't touch it:
+```
+top -l 6 -s 5 -pid $(pgrep -x GameTranslator) -stats pid,cpu | grep -E '^[0-9]'
+```
+Ignore the first sample. Expected average ≤ 10 %. Repeat while paused with key
+`sk-test`: ≤ 10 %.
+
+**AC-4** — type new words into TextEdit while translating (and type a sentence
+character by character): new words are translated as quickly as before. Then switch
+provider: T-0015 AC-3 still passes (Google/Claude translation appears on the
+untouched window).
+
+### Proposed follow-ups
+- If AC-3 is still above 10 %, the next cost is the frame delivery itself (6 FPS,
+  2× window size). A lower FPS while nothing changes would be a separate task (FPS is
+  out of scope here).
 
 ---
 
@@ -87,3 +174,5 @@ MacBook Air. It should be close to idle. It was 0 % when not capturing.
 | Date | Change | Who | Note |
 |---|---|---|---|
 | 2026-09-24 | → READY | Cowork | from T-0015 review (sample: CIContext per frame + OCR every frame) |
+| 2026-09-24 | READY → IN_PROGRESS | Claude Code | started (owner: do T-0016 and T-0017, review after) |
+| 2026-09-24 | IN_PROGRESS → REVIEW | Claude Code | code/test/build ACs pass; AC-3, AC-4 manual pending owner |

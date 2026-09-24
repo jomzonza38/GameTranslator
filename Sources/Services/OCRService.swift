@@ -136,16 +136,17 @@ final class OCRService: @unchecked Sendable {
         return OCRFrame(texts: texts, imageSize: imageSize)
     }
 
+    /// 3+ repeats of the same letter. Only letters — repeated punctuation is real text
+    /// ("Wait...", "!!!") and must stay. Built once, not for every recognised line.
+    private static let repeatedLetters = try? NSRegularExpression(pattern: "(\\p{L})\\1{2,}")
+
     /// Clean up common OCR artifacts to improve translation quality
     /// without slowing down recognition
     static func cleanOCRText(_ text: String) -> String {
         var result = text
 
         // Remove repeated characters that OCR sometimes produces (e.g., "Helllo" → "Hello")
-        // Only collapse 3+ repeats of the same letter — repeated punctuation is
-        // real text ("Wait...", "!!!") and must stay as it is
-        let pattern = "(\\p{L})\\1{2,}"
-        if let regex = try? NSRegularExpression(pattern: pattern) {
+        if let regex = repeatedLetters {
             result = regex.stringByReplacingMatches(
                 in: result,
                 range: NSRange(result.startIndex..., in: result),

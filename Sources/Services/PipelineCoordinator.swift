@@ -35,13 +35,18 @@ final class PipelineCoordinator: ObservableObject {
     // MARK: - State
 
     private var selectedWindow: Any? // SCWindow
-    private var pendingFrame: (image: CGImage, contentRect: CGRect)?
+    private var pendingFrame: CapturedFrame?
     private var isProcessing = false
     /// The running drain loop, cancelled by stop()
     private var pipelineTask: Task<Void, Never>?
     /// The latest captured frame, re-run when work is waiting on a static screen
     /// (ScreenCaptureKit sends no frames while the window doesn't change)
-    private var lastFrame: (image: CGImage, contentRect: CGRect)?
+    private var lastFrame: CapturedFrame?
+    /// Skips OCR for frames whose pixels were processed recently (T-0016)
+    private var frameFilter = FrameChangeFilter()
+    /// On-screen text is waiting to become stable, which needs another run of the
+    /// same pixels — so identical frames must not be skipped until it is translated
+    private var isWaitingForStableText = false
     /// A scheduled pipeline run on `lastFrame` (see StaticScreenRerun)
     private var rerunTask: Task<Void, Never>?
     /// Moved on by every start and teardown, so a start that finishes after the user
@@ -225,6 +230,8 @@ final class PipelineCoordinator: ObservableObject {
         rerunTask?.cancel()
         rerunTask = nil
         lastFrame = nil
+        frameFilter.reset()
+        isWaitingForStableText = false
 
         await screenCapture.stopCapture()
         overlayController.hide()
@@ -369,11 +376,37 @@ final class PipelineCoordinator: ObservableObject {
 
     // MARK: - Pipeline Processing
 
-    private func processFrame(_ image: CGImage, contentRect: CGRect) {
+    /// A frame from ScreenCaptureKit (image nil = same pixels as the previous one).
+    /// Frames whose pixels were processed recently — a static screen, or a caret /
+    /// "next" arrow blinking between a few states — give the same OCR result and are
+    /// skipped, unless the window moved or text is waiting to become stable.
+    private func handleCapturedFrame(image: CGImage?, fingerprint: UInt64, contentRect: CGRect) {
         guard isRunning else { return }
-        lastFrame = (image, contentRect)
+        let frame: CapturedFrame
+        if let image {
+            frame = CapturedFrame(image: image, contentRect: contentRect, fingerprint: fingerprint)
+            lastFrame = frame
+        } else if let last = lastFrame, last.fingerprint == fingerprint {
+            frame = last
+        } else {
+            return // unchanged frame whose image we don't have (arrived out of order)
+        }
+
+        guard frameFilter.shouldProcess(
+            frame.fingerprint,
+            windowFrame: screenCapture.currentWindowFrame,
+            workWaiting: isWaitingForStableText
+        ) else { return }
+        processFrame(frame)
+    }
+
+    /// Run the pipeline on `frame` (or queue it behind the run in progress). Re-runs
+    /// on the last frame (StaticScreenRerun) call this directly, bypassing the filter.
+    private func processFrame(_ frame: CapturedFrame) {
+        guard isRunning else { return }
+        lastFrame = frame
         guard !isProcessing else {
-            pendingFrame = (image, contentRect)
+            pendingFrame = frame
             return
         }
 
@@ -381,14 +414,15 @@ final class PipelineCoordinator: ObservableObject {
         // main actor would otherwise each start their own pipeline before it runs
         isProcessing = true
         pipelineTask = Task { [weak self] in
-            await self?.drainPipeline(image: image, contentRect: contentRect)
+            await self?.drainPipeline(frame)
         }
     }
 
-    private func drainPipeline(image: CGImage, contentRect: CGRect) async {
-        var next: (image: CGImage, contentRect: CGRect)? = (image, contentRect)
+    private func drainPipeline(_ first: CapturedFrame) async {
+        var next: CapturedFrame? = first
 
         while let frame = next, !Task.isCancelled {
+            frameFilter.recordProcessed(frame.fingerprint, windowFrame: screenCapture.currentWindowFrame)
             await runPipeline(image: frame.image, contentRect: frame.contentRect)
             next = pendingFrame
             pendingFrame = nil
@@ -414,7 +448,7 @@ final class PipelineCoordinator: ObservableObject {
             guard !Task.isCancelled, let self,
                   self.sessions.isCurrent(session), self.isRunning,
                   let frame = self.lastFrame else { return }
-            self.processFrame(frame.image, contentRect: frame.contentRect)
+            self.processFrame(frame)
         }
     }
 
@@ -427,6 +461,8 @@ final class PipelineCoordinator: ObservableObject {
                 untranslatedFailedAt.append(work.state.failedAt[text.text])
             }
         }
+        isWaitingForStableText = !isTranslationPaused && untranslatedFailedAt.contains { $0 == nil }
+
         let delay = StaticScreenRerun.delay(
             untranslatedFailedAt: untranslatedFailedAt,
             isPaused: isTranslationPaused,
@@ -824,6 +860,51 @@ final class PipelineCoordinator: ObservableObject {
     }
 }
 
+// MARK: - Frame skipping
+
+/// A captured frame and the fingerprint of its pixels
+struct CapturedFrame {
+    let image: CGImage
+    let contentRect: CGRect
+    let fingerprint: UInt64
+}
+
+/// Remembers the fingerprints of recently processed frames. A frame with the same
+/// pixels at the same window position gives the same OCR result, so it can be skipped.
+/// Keeping several (not just the last) also covers things that blink between a few
+/// states — a text caret, a "▼ next" arrow.
+struct FrameChangeFilter {
+    let capacity: Int
+    private(set) var recent: [UInt64] = []
+    private var lastWindowFrame: CGRect?
+
+    init(capacity: Int = 8) {
+        self.capacity = capacity
+    }
+
+    /// Whether the frame must go through the pipeline
+    func shouldProcess(_ fingerprint: UInt64, windowFrame: CGRect?, workWaiting: Bool) -> Bool {
+        // Text waiting to become stable needs a second run of the same pixels;
+        // a moved window needs its overlay repositioned
+        workWaiting || windowFrame != lastWindowFrame || !recent.contains(fingerprint)
+    }
+
+    /// The frame is being run through the pipeline
+    mutating func recordProcessed(_ fingerprint: UInt64, windowFrame: CGRect?) {
+        recent.removeAll { $0 == fingerprint }
+        recent.append(fingerprint)
+        if recent.count > capacity {
+            recent.removeFirst(recent.count - capacity)
+        }
+        lastWindowFrame = windowFrame
+    }
+
+    mutating func reset() {
+        recent.removeAll()
+        lastWindowFrame = nil
+    }
+}
+
 // MARK: - Static screen re-run
 
 /// When to run the pipeline again on the last captured frame. ScreenCaptureKit sends
@@ -865,9 +946,9 @@ enum StaticScreenRerun {
 // MARK: - ScreenCaptureDelegate
 
 extension PipelineCoordinator: ScreenCaptureDelegate {
-    nonisolated func screenCaptureService(_ service: ScreenCaptureService, didCaptureFrame image: CGImage, contentRect: CGRect) {
+    nonisolated func screenCaptureService(_ service: ScreenCaptureService, didCaptureFrame image: CGImage?, fingerprint: UInt64, contentRect: CGRect) {
         Task { @MainActor in
-            processFrame(image, contentRect: contentRect)
+            handleCapturedFrame(image: image, fingerprint: fingerprint, contentRect: contentRect)
         }
     }
 
