@@ -27,7 +27,7 @@ From the owner — every task must keep these (details in `CLAUDE.md`):
 | M1 — Stability | Close the gaps found in the 2026-09-23 audits that affect the standing goals | done 2026-09-24 | T-0001 … T-0005 |
 | M2 — Reliability & UX | Errors visible to the user, no request storms, correct placement on every display | done 2026-09-24 | T-0006 … T-0009 |
 | M3 — Providers & settings hygiene | Keys saved cleanly, right cache per provider, no endless retries on a refused key, clean test logs | done 2026-09-24 | T-0010 … T-0015 (T-0012 corrected by T-0015) |
-| M4 — Performance & first use | Near-idle CPU on a static screen; no silent minute-long wait on the first OCR | active | T-0016, T-0017 |
+| M4 — Performance & first use | Near-idle CPU on a static screen; no silent minute-long wait on the first OCR | done 2026-09-24 | T-0016, T-0017 |
 
 ## Backlog (not yet tasks)
 
@@ -85,4 +85,10 @@ T-0007 · batch fallback request storm → T-0008 · multi-monitor coordinates �
   back-off or a retry cap for chatter.
 - → T-0017 · First OCR after launching a new build takes ~74 s.
 - → T-0016 · CPU ≈ 43 % on a static screen (`CIContext` per frame + OCR on every frame).
+- From T-0017: sign the Verify/unit-test builds with the same Apple Development certificate as
+  `build.sh`, so tests and app share one Vision model cache (no ~74 s first OCR after each
+  Claude Code verify). Risk: a test host with the same bundle ID + certificate may touch the
+  Screen Recording grant (stability goal 1) — owner to decide before it becomes a task.
+- From T-0016: a game whose background keeps moving still gets OCR on every frame (6 FPS).
+  Measure in a real game first; if it's heavy → adaptive FPS / region-only change detection.
 

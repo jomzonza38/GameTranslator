@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **Status** | REVIEW |
+| **Status** | DONE |
 | **Type** | fix |
 | **Priority** | P2 |
 | **Version impact** | patch |
@@ -118,7 +118,7 @@ MacBook Air. It should be close to idle. It was 0 % when not capturing.
 
 **Outcome:** PARTIAL — `[code]`/`[test]`/`[build]` criteria pass; AC-3 and AC-4 pending owner
 **Version:** 1.11.25 → 1.11.26
-**Commit:** not committed (owner asked for T-0016 and T-0017 first, review after)
+**Commit:** `8fd9f5e`
 
 ### Acceptance criteria
 | AC | Result | Evidence |
@@ -170,9 +170,32 @@ untouched window).
 
 ## Review
 
+**Cowork, 2026-09-24 — owner test on v1.11.27: DONE.**
+- AC-3 ✅: the owner measured with `top`: ≤ 10 % on a static screen both when everything is translated and while paused (before this task it was ~43 %).
+- AC-4 ✅: log 10:52:52–53 — a word typed into TextEdit was OCR'd and sent within ~0.5 s. At 10:54:06 the provider was switched to Google on the untouched window → the text was re-translated within 0.5 s (T-0015 AC-3 still holds).
+
+**Cowork, 2026-09-24 — code review passed; waiting for owner's AC-3 / AC-4.**
+
+| AC | Verdict | Note |
+|---|---|---|
+| AC-1 | ✅ | One `CIContext` per `StreamOutput` (per stream), used only on the capture queue. An identical frame skips `createCGImage` entirely. |
+| AC-2 | ✅ | `FrameChangeFilter` (8 tests) + `FrameFingerprint` (4 tests). The decision is pure and separate from the coordinator. |
+| AC-3, AC-4 | ⏳ owner | The log is still from v1.11.25. |
+| AC-5 | ✅ | 115 tests. |
+
+Checked in the diff:
+- An exact fingerprint (CRC-32 + Adler-32, 64-bit) means typewriter text or a single new character always counts as a new frame, so Req 2 holds. The collision chance is negligible.
+- Skipping never blocks the T-0015 work: re-runs call `processFrame` directly. `isWaitingForStableText` forces identical frames through until the text becomes stable, and it is false while paused, so a paused static screen stays idle.
+- "Processed" is recorded in `drainPipeline` when a frame actually runs. A queued frame that gets replaced is not recorded, which is correct.
+- A caret or a "▼" arrow blinking between states (up to 8 fingerprints) skips OCR, but StreamOutput still converts a `CGImage` on every state change (~2×/s for a caret). The cost is small and acceptable.
+- A game with a constantly moving background still gets full OCR every frame, the same as before. That is not covered by this task; if it's a problem it belongs with an FPS/adaptive-rate task (Claude Code's follow-up; stays in the backlog until measured in a real game).
+- Minor, no action: the `lastFrame` comment still says ScreenCaptureKit "sends no frames" for a static window, and the `FrameFingerprint` doc says ~1 ms while the measurement is 2.9 ms. Fix them the next time this file is touched.
+
 ## Status history
 | Date | Change | Who | Note |
 |---|---|---|---|
 | 2026-09-24 | → READY | Cowork | from T-0015 review (sample: CIContext per frame + OCR every frame) |
 | 2026-09-24 | READY → IN_PROGRESS | Claude Code | started (owner: do T-0016 and T-0017, review after) |
 | 2026-09-24 | IN_PROGRESS → REVIEW | Claude Code | code/test/build ACs pass; AC-3, AC-4 manual pending owner |
+| 2026-09-24 | — | Cowork | code review passed; waiting for owner AC-3, AC-4 |
+| 2026-09-24 | REVIEW → DONE | Cowork | owner: CPU ≤ 10 % (static, paused); log 10:52–10:54 |

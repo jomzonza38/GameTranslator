@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **Status** | REVIEW |
+| **Status** | DONE |
 | **Type** | investigation |
 | **Priority** | P2 |
 | **Version impact** | none (patch if code changes) |
@@ -126,7 +126,7 @@ of the first recognition):
 
 **Outcome:** PARTIAL — AC-1 and AC-3 pass; AC-2 pending owner
 **Version:** 1.11.26 → 1.11.27
-**Commit:** not committed (owner asked for T-0016 and T-0017 first, review after)
+**Commit:** `85a0893`
 
 ### Acceptance criteria
 | AC | Result | Evidence |
@@ -174,9 +174,28 @@ case** (a good moment to check):
 
 ## Review
 
+**Cowork, 2026-09-24 — owner test on v1.11.27: DONE.**
+- AC-2 ✅: after the ad-hoc tests, the owner launched at 10:49:12 and started right away at 10:49:21. The owner confirmed the menu showed `กำลังเตรียม OCR ครั้งแรก…` for the whole wait. Log: `10:50:55.529 OCR … in 94327ms` and `10:50:55.542 OCR warm-up done in 103.0 s (Vision prepared its model …)`, so the warm-up and the first real OCR finished together (Vision prepares the model once for both). The first translation followed at 10:50:56.
+- Note: this time it took 103 s (74 s before). The time varies, and "~1 นาที" in the Thai text may undersell it. That's minor; the text can change later.
+
+**Cowork, 2026-09-24 — code review passed; waiting for owner's AC-2.**
+
+| AC | Verdict | Note |
+|---|---|---|
+| AC-1 | ✅ | A strong investigation. Experiments E1–E5 separate "a new binary" (not the cause) from "a different signing identity" (the cause, ~74 s), and the timeline in the owner's log matches (Claude Code's ad-hoc test runs came right before the slow launches at 09:32 and 09:59). A macOS update is recorded as another likely trigger. |
+| AC-2 | ⏳ owner | The next launch after the ad-hoc tests should hit the slow case, which makes a good test. |
+| AC-3 | ✅ | 117 tests. |
+
+- Warm-up runs on a utility queue after the menu bar item is created, and nothing waits on it, so Req 3 holds. It uses the current OCR level and languages. If the user changes the language before starting, the first OCR may still be slow, but the Thai status covers that.
+- The `.preparingOCR` status comes back to `.running` in `defer` only if it is still `.preparingOCR`, so a stop in the middle is not overwritten. ✅
+- In Overlay mode the user sees the status only when opening the menu (the panel shows it in Panel mode). That's within spec: the spec says "menu/panel".
+- Proposed follow-up (signing the test builds with the same certificate): sent to the owner to decide. It touches signing and TCC, and launching a test host with the same bundle ID + certificate may affect the Screen Recording grant (stability rule 1), so it goes in the ROADMAP backlog, not a task yet.
+
 ## Status history
 | Date | Change | Who | Note |
 |---|---|---|---|
 | 2026-09-24 | → READY | Cowork | from owner's logs 09:33 / 10:00 |
 | 2026-09-24 | READY → IN_PROGRESS | Claude Code | started (stacked on T-0016, uncommitted) |
 | 2026-09-24 | IN_PROGRESS → REVIEW | Claude Code | cause measured (signing-identity switch); warm-up + Thai status; AC-2 manual pending owner |
+| 2026-09-24 | — | Cowork | code review passed; waiting for owner AC-2 |
+| 2026-09-24 | REVIEW → DONE | Cowork | owner confirmed Thai status during the 94 s first OCR |
