@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **Status** | READY |
+| **Status** | REVIEW |
 | **Type** | test |
 | **Priority** | P3 |
 | **Version impact** | none (test/logging only — patch if app code changes) |
@@ -59,7 +59,53 @@ owner and Cowork use to check real app behaviour.
 
 ## Implementation Notes
 
+- `GameLog` gets `isRunningUnitTests`, the **same check `AppDelegate` already uses** to
+  skip setup under tests: an `XCTest*` environment variable or `XCTestCase` loaded.
+  When true:
+  - the default `logFileURL` is `nil`, so `log()` writes no file;
+  - `setup()` returns early (it isn't called under tests anyway, but it would also
+    clear the owner's log).
+  `NSLog` console output is unchanged, so lines still show in the Xcode/xcodebuild
+  output (Req 1).
+- In the normal app, `XCTestCase` isn't loaded and no `XCTest*` variable is set, so
+  logging is exactly as before (Req 2).
+- **Version:** patch, because app code (`GameLog.swift`) changed — as the task's
+  version note says.
+
 ## Result
+
+**Outcome:** PASS — AC-1 and AC-3 pass; AC-2 checked by Claude Code (owner may re-check)
+**Version:** 1.11.22 → 1.11.23
+**Commit:** not committed (owner asked for T-0010…T-0013 first, review after)
+
+### Acceptance criteria
+| AC | Result | Evidence |
+|---|---|---|
+| AC-1 | ✅ pass | `GameLog.logFileURL` is `nil` and `setup()` returns early when `isRunningUnitTests`; `log()` only writes when `logFileURL` is set. |
+| AC-2 | ✅ pass (checked by Claude Code) | `~/Desktop/GameTranslator.log` before the test run: 163697 bytes, sha `7959b08c6e24`. After the full suite (92 tests): same size, same sha, same last line. Before this fix, today's test runs had added lines such as `Batch request failed (แปลไม่สำเร็จ: HTTP 500), using parallel` (09:14). |
+| AC-3 | ✅ pass | `Executed 92 tests, with 0 failures`, `** TEST SUCCEEDED **`, `** BUILD SUCCEEDED **`. |
+
+### Build & test
+```
+Executed 92 tests, with 0 failures (0 unexpected) in 0.528 (0.574) seconds
+** TEST SUCCEEDED **
+** BUILD SUCCEEDED **
+log file: size 163697 → 163697, sha 7959b08c6e24 → 7959b08c6e24
+```
+
+### Changed files (this task only, on top of T-0012)
+```
+ Resources/Info.plist            | 1.11.23
+ Sources/Services/GameLog.swift  | no file writes under XCTest
+```
+
+### Manual checks for the owner
+Optional re-check of AC-2: note the last line of `~/Desktop/GameTranslator.log`, run
+the unit tests, and confirm the file is unchanged.
+
+### Proposed follow-ups
+- The log still contains today's test lines from 09:14 and earlier (the log is cleared
+  at the next app launch).
 
 ---
 
@@ -69,3 +115,5 @@ owner and Cowork use to check real app behaviour.
 | Date | Change | Who | Note |
 |---|---|---|---|
 | 2026-09-24 | → READY | Cowork | created for M3 |
+| 2026-09-24 | READY → IN_PROGRESS | Claude Code | started (stacked on T-0010…T-0012, uncommitted) |
+| 2026-09-24 | IN_PROGRESS → REVIEW | Claude Code | all ACs pass (AC-2 checked by Claude Code) |
