@@ -10,7 +10,7 @@ Lifecycle and who may set each status: `WORKFLOW.md` §3.
 
 | ID | Title | Status | Priority | Depends on | Next step by |
 |---|---|---|---|---|---|
-| [T-0026](T-0026-learning-data-correctness.md) | Learning data stays correct: per-game language, ordered saves, clean clear | READY | P2 | — | Claude Code |
+| [T-0026](T-0026-learning-data-correctness.md) | Learning data stays correct: per-game language, ordered saves, clean clear | REVIEW | P2 | — | Cowork (review) + owner (AC-5 manual) |
 
 ## Closed
 

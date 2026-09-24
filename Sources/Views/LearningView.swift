@@ -184,11 +184,7 @@ struct LearningView: View {
             Button("หยุด") { meanings.cancel() }
         } else {
             Button {
-                meanings.lookUp(
-                    wordIDs: missing.map(\.id), game: game,
-                    sourceLanguage: settings.sourceLanguage.englishName,
-                    sourceCode: settings.sourceLanguage.translationCode
-                )
+                meanings.lookUp(wordIDs: missing.map(\.id), game: game)
             } label: {
                 Label("หาความหมาย\(missing.isEmpty ? "" : " (\(min(missing.count, MeaningService.batchSize)))")", systemImage: "text.book.closed")
             }
@@ -232,7 +228,8 @@ struct LearningView: View {
             original: original,
             translation: translation,
             gameTitle: game,
-            sourceLanguage: settings.sourceLanguage.englishName,
+            // The game's own language, not today's setting (T-0026)
+            sourceLanguage: store.sourceLanguage(for: game, fallback: settings.sourceLanguage).englishName,
             glossary: settings.gameProfiles.values.first { $0.title == game }?.glossary ?? []
         )
     }
@@ -456,12 +453,7 @@ private struct WordDetail: View {
     }
 
     private func lookUp(force: Bool) {
-        meanings.lookUp(
-            wordIDs: [word.id], game: game,
-            sourceLanguage: settings.sourceLanguage.englishName,
-            sourceCode: settings.sourceLanguage.translationCode,
-            force: force
-        )
+        meanings.lookUp(wordIDs: [word.id], game: game, force: force)
     }
 }
 
@@ -510,7 +502,7 @@ private struct SentenceDetail: View {
     }
 
     private func explain(force: Bool) {
-        meanings.explain(sentenceID: sentence.id, game: game, sourceLanguage: settings.sourceLanguage.englishName, force: force)
+        meanings.explain(sentenceID: sentence.id, game: game, force: force)
     }
 }
 

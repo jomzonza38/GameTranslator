@@ -71,6 +71,9 @@ struct LearningWord: Codable, Identifiable, Equatable {
 struct GameLearningData: Codable, Equatable {
     var sentences: [LearningSentence] = []
     var words: [LearningWord] = []
+    /// Source language the lines were collected in (`SourceLanguage.rawValue`; the latest
+    /// if it changed). Nil for data saved before T-0026.
+    var languageCode: String?
 }
 
 /// The file on disk
@@ -167,8 +170,17 @@ final class LearningStore: ObservableObject {
     let fileURL: URL
     private let saveDelay: TimeInterval
     private var saveTask: Task<Void, Never>?
-    /// Changes not written yet (a debounced save is pending)
-    private var hasUnsavedChanges = false
+
+    // Saving (T-0026): writes go through one serial queue, so they happen one at a time and
+    // in order — the file always ends up with the newest snapshot.
+    private let writeQueue = DispatchQueue(label: "com.worawalan.GameTranslator.learning-save", qos: .utility)
+    private let writer: (LearningFile, URL) throws -> Void
+    /// Bumped by every change
+    private var changeCount = 0
+    /// The newest change count whose snapshot has been written
+    private var savedCount = 0
+    /// Changes not written yet (only false once a write has actually finished)
+    var hasUnsavedChanges: Bool { savedCount < changeCount }
 
     nonisolated static var defaultDirectory: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
@@ -176,9 +188,14 @@ final class LearningStore: ObservableObject {
         return base.appendingPathComponent("com.worawalan.GameTranslator", isDirectory: true)
     }
 
-    init(directory: URL, saveDelay: TimeInterval = 1.0) {
+    init(
+        directory: URL,
+        saveDelay: TimeInterval = 1.0,
+        writer: @escaping (LearningFile, URL) throws -> Void = LearningStore.write
+    ) {
         self.fileURL = directory.appendingPathComponent("learning.json")
         self.saveDelay = saveDelay
+        self.writer = writer
         self.file = Self.load(from: fileURL)
     }
 
@@ -191,6 +208,12 @@ final class LearningStore: ObservableObject {
         file.games[game] ?? GameLearningData()
     }
 
+    /// The language a game's lines were collected in; `fallback` (the current setting) only
+    /// for data saved before languages were stored (T-0026)
+    func sourceLanguage(for game: String, fallback: AppSettings.SourceLanguage) -> AppSettings.SourceLanguage {
+        file.games[game]?.languageCode.flatMap(AppSettings.SourceLanguage.init(rawValue:)) ?? fallback
+    }
+
     // MARK: Adding (from the pipeline)
 
     /// Record a real translation. Returns quickly: words are extracted in the background.
@@ -199,6 +222,7 @@ final class LearningStore: ObservableObject {
         guard WordExtractor.isLearnable(text), !game.isEmpty else { return }
 
         var data = file.games[game] ?? GameLearningData()
+        data.languageCode = languageCode
         if let index = data.sentences.firstIndex(where: { $0.original == text }) {
             data.sentences[index].timesSeen += 1
             data.sentences[index].lastSeen = now
@@ -217,8 +241,15 @@ final class LearningStore: ObservableObject {
         Task.detached(priority: .utility) { [weak self] in
             let words = WordExtractor.words(in: text, languageCode: languageCode)
             guard !words.isEmpty else { return }
-            await self?.addWords(words, from: text, game: game, now: now)
+            await self?.applyExtractedWords(words, from: text, game: game, now: now)
         }
+    }
+
+    /// Apply words from a background extraction — only if their line is still there. A
+    /// game cleared (or a line deleted) meanwhile must not come back with words (T-0026).
+    func applyExtractedWords(_ words: [WordExtractor.Word], from sentence: String, game: String, now: Date = Date()) {
+        guard file.games[game]?.sentences.contains(where: { $0.original == sentence }) == true else { return }
+        addWords(words, from: sentence, game: game, now: now)
     }
 
     /// Add extracted words synchronously (also used by tests)
@@ -359,35 +390,51 @@ final class LearningStore: ObservableObject {
         try data.write(to: url, options: .atomic)
     }
 
-    /// Save after `saveDelay` of quiet; encoding and writing happen off the main actor
+    /// Save after `saveDelay` of quiet. Encoding and writing happen on the serial write
+    /// queue, off the main actor.
     private func scheduleSave() {
-        hasUnsavedChanges = true
+        changeCount += 1
         saveTask?.cancel()
         let delay = saveDelay
         saveTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(delay))
-            guard !Task.isCancelled, let self else { return }
-            let snapshot = self.file
-            let url = self.fileURL
-            self.hasUnsavedChanges = false
-            await Task.detached(priority: .utility) {
-                do {
-                    try LearningStore.write(snapshot, to: url)
-                } catch {
-                    GameLog.log("Learning data save failed: \(error.localizedDescription)")
-                }
-            }.value
+            guard !Task.isCancelled else { return }
+            self?.enqueueWrite()
         }
     }
 
-    /// Write now (tests; app quit)
-    func saveNow() throws {
-        saveTask?.cancel()
-        try Self.write(file, to: fileURL)
-        hasUnsavedChanges = false
+    private func enqueueWrite() {
+        let snapshot = file
+        let version = changeCount
+        let url = fileURL
+        let writer = self.writer
+        writeQueue.async { [weak self] in
+            do {
+                try writer(snapshot, url)
+                Task { @MainActor in self?.didWrite(version) }
+            } catch {
+                GameLog.log("Learning data save failed: \(error.localizedDescription)")
+            }
+        }
     }
 
-    /// App quit: write pending changes synchronously (a debounced save would be lost)
+    private func didWrite(_ version: Int) {
+        savedCount = max(savedCount, version)
+    }
+
+    /// Write the newest data now, after any write already running (tests; app quit)
+    func saveNow() throws {
+        saveTask?.cancel()
+        let snapshot = file
+        let version = changeCount
+        let url = fileURL
+        let writer = self.writer
+        try writeQueue.sync { try writer(snapshot, url) }
+        didWrite(version)
+    }
+
+    /// App quit: write pending changes synchronously (a debounced save would be lost). Waits
+    /// for a background write that is still running, then writes the newest data.
     func saveIfNeeded() {
         guard hasUnsavedChanges else { return }
         do {

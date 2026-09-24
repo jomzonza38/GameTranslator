@@ -92,18 +92,18 @@ final class MeaningServiceTests: XCTestCase {
                                      makeLLM: { _, _ in llm }, google: GoogleFreeProvider(),
                                      chatProvider: { nil }, selectedProvider: { .claudeHaiku })
 
-        service.lookUp(wordIDs: [id], game: "G", sourceLanguage: "English", sourceCode: "en")
+        service.lookUp(wordIDs: [id], game: "G")
         await waitUntilIdle(service)
         XCTAssertEqual(store.data(for: "G").words.first?.meaning, "ดาบ")
         XCTAssertEqual(store.data(for: "G").words.first?.meaningSource, "ai")
         XCTAssertEqual(llm.calls, 1)
         XCTAssertTrue(llm.lastSystem.contains("\"G\""), "game title in the prompt")
 
-        service.lookUp(wordIDs: [id], game: "G", sourceLanguage: "English", sourceCode: "en")
+        service.lookUp(wordIDs: [id], game: "G")
         await waitUntilIdle(service)
         XCTAssertEqual(llm.calls, 1, "already has a meaning → no request")
 
-        service.lookUp(wordIDs: [id], game: "G", sourceLanguage: "English", sourceCode: "en", force: true)
+        service.lookUp(wordIDs: [id], game: "G", force: true)
         await waitUntilIdle(service)
         XCTAssertEqual(llm.calls, 2, "หาความหมายใหม่ sends one")
     }
@@ -115,7 +115,7 @@ final class MeaningServiceTests: XCTestCase {
         let llm = ScriptedLLM { _ in "I'm sorry, I need more context." }
         let service = MeaningService(store: store, keyFor: { _ in "sk" }, makeLLM: { _, _ in llm },
                                      chatProvider: { nil }, selectedProvider: { .openAI })
-        service.lookUp(wordIDs: [id], game: "G", sourceLanguage: "English", sourceCode: "en")
+        service.lookUp(wordIDs: [id], game: "G")
         await waitUntilIdle(service)
         XCTAssertNil(store.data(for: "G").words.first?.meaning)
         XCTAssertNotNil(service.lastError)
@@ -128,7 +128,7 @@ final class MeaningServiceTests: XCTestCase {
         let llm = ScriptedLLM { _ in throw TranslationError.translationFailed(message: "HTTP 401") }
         let service = MeaningService(store: store, keyFor: { _ in "sk" }, makeLLM: { _, _ in llm },
                                      chatProvider: { nil }, selectedProvider: { .claudeHaiku })
-        service.lookUp(wordIDs: [id], game: "G", sourceLanguage: "English", sourceCode: "en")
+        service.lookUp(wordIDs: [id], game: "G")
         await waitUntilIdle(service)
         try? await Task.sleep(for: .milliseconds(100))
         XCTAssertEqual(llm.calls, 1)
@@ -142,7 +142,7 @@ final class MeaningServiceTests: XCTestCase {
         let llm = ScriptedLLM { _ in "อธิบาย" }
         let service = MeaningService(store: store, keyFor: { _ in "" }, makeLLM: { _, _ in llm },
                                      chatProvider: { nil }, selectedProvider: { .googleFree })
-        service.explain(sentenceID: id, game: "G", sourceLanguage: "English")
+        service.explain(sentenceID: id, game: "G")
         XCTAssertEqual(llm.calls, 0)
         XCTAssertTrue(service.lastError?.contains("API key") == true)
     }

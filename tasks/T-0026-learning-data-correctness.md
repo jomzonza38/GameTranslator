@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **Status** | READY |
+| **Status** | REVIEW |
 | **Type** | fix |
 | **Priority** | P2 |
 | **Version impact** | patch |
@@ -92,7 +92,74 @@ them before the owner collects a lot of it.
 
 ## Implementation Notes
 
+1. **Language per game (Req 1):**
+   - `GameLearningData.languageCode` (optional) is set by every `add` to the language the
+     line was collected in (the latest wins).
+   - `LearningStore.sourceLanguage(for:fallback:)` returns it, or the fallback when a game
+     was saved before this change (Req 4).
+   - `MeaningService.lookUp(wordIDs:game:force:)` and `explain(sentenceID:game:force:)` no
+     longer take a language from the view; they use `language(for: game)` for both the LLM
+     prompt ("learn Japanese …") and Google's `from:`. The current setting is injected only
+     as the fallback.
+   - `LearningView.chatContext` uses the game's language for the chat too (AC-4).
+2. **Ordered saves (Req 2):**
+   - All writes go through one **serial** `DispatchQueue`, so they run one at a time in the
+     order they were queued. A debounced save snapshots the newest data when it fires.
+   - Two counters replace the flag: `changeCount` (every change) and `savedCount` (newest
+     change whose write *finished*). `hasUnsavedChanges` = `savedCount < changeCount`, so
+     it stays true until a write has really completed.
+   - `saveNow()` / quit's `saveIfNeeded()` use `writeQueue.sync`: it waits for a write still
+     running, then writes the newest data last. That is the only main-actor I/O, as the
+     spec allows.
+   - The writer is injectable (tests make the first write slow).
+3. **Clear race (Req 3):** background extraction now calls
+   `applyExtractedWords`, which adds the words only if their line still exists in that
+   game. A cleared game, or a deleted line, is therefore not brought back. The direct
+   `addWords` (tests, seeding) is unchanged.
+- The translation pipeline is untouched (its `LearningStore.add` call is unchanged).
+
 ## Result
+
+**Outcome:** PARTIAL — `[test]`/`[code]`/`[build]` criteria pass; AC-5 pending owner
+**Version:** 1.15.0 → 1.15.1
+**Commit:** not committed (waiting for owner)
+
+### Acceptance criteria
+| AC | Result | Evidence |
+|---|---|---|
+| AC-1 | ✅ pass | `LearningDataCorrectnessTests`: `testGameKeepsItsLanguageAcrossSaveAndLoad` (ja survives), `testGoogleLookupUsesTheGamesLanguageNotTheSetting` (setting English → Google `from: "ja"`), `testLLMPromptNamesTheGamesLanguage` ("learn Japanese"), `testDataWithoutALanguageFallsBackToTheSetting`. |
+| AC-2 | ✅ pass | `testASlowOlderWriteCannotOverwriteANewerOne` (first write 0.3 s slower → the file has both lines, nothing unsaved), `testQuitSaveDuringARunningWriteWritesTheNewestData`. |
+| AC-3 | ✅ pass | `testClearedGameDoesNotComeBackWithWords` (real `add` + immediate `clear`), `testWordsOfADeletedLineAreDropped`. |
+| AC-4 | ✅ pass | `LearningView.chatContext` → `store.sourceLanguage(for:fallback:)`; no new main-actor file I/O (only `saveNow`/quit via `writeQueue.sync`). |
+| AC-5 | ⏳ pending owner | Steps below. |
+| AC-6 | ✅ pass | `Executed 198 tests, with 0 failures`, `** TEST SUCCEEDED **`, `** BUILD SUCCEEDED **`. |
+
+### Build & test
+```
+Executed 198 tests, with 0 failures (0 unexpected)
+** TEST SUCCEEDED **
+** BUILD SUCCEEDED **
+```
+
+### Changed files
+```
+ Resources/Info.plist                         | 1.15.1
+ Sources/Services/LearningStore.swift         | languageCode, serial ordered saves, applyExtractedWords
+ Sources/Services/MeaningService.swift        | language from the game (fallback = setting)
+ Sources/Views/LearningView.swift             | calls without a language; chat uses the game's language
+ Tests/MeaningServiceTests.swift              | updated calls
+ Tests/LearningDataCorrectnessTests.swift     | (new, 8 tests)
+```
+
+### Manual checks for the owner
+**AC-5** — after `./build.sh`: translate some lines from a Japanese game (setting
+ภาษาในเกม = ญี่ปุ่น), switch the setting to English, open Learning → that game →
+หาความหมาย → Thai meanings of the **Japanese** words. (Data collected before this version
+has no language stored and uses the current setting — pick ญี่ปุ่น again for those, or use
+"หาความหมายใหม่".)
+
+### Proposed follow-ups
+- none
 
 ---
 
@@ -102,3 +169,5 @@ them before the owner collects a lot of it.
 | Date | Change | Who | Note |
 |---|---|---|---|
 | 2026-09-24 | → READY | Cowork | created from M6 audit review |
+| 2026-09-24 | READY → IN_PROGRESS | Claude Code | started |
+| 2026-09-24 | IN_PROGRESS → REVIEW | Claude Code | test/code/build ACs pass; AC-5 manual pending owner |

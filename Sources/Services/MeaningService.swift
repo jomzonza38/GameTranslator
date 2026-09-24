@@ -137,6 +137,8 @@ final class MeaningService: ObservableObject {
     private let google: TranslationProvider
     private let chatProvider: () -> AppSettings.TranslationProviderType?
     private let selectedProvider: () -> AppSettings.TranslationProviderType
+    /// The current source-language setting — only a fallback for games saved without one
+    private let fallbackLanguage: () -> AppSettings.SourceLanguage
     private var task: Task<Void, Never>?
 
     init(
@@ -145,7 +147,8 @@ final class MeaningService: ObservableObject {
         makeLLM: ((AppSettings.TranslationProviderType, String) -> LLMChatProvider)? = nil,
         google: TranslationProvider? = nil,
         chatProvider: (() -> AppSettings.TranslationProviderType?)? = nil,
-        selectedProvider: (() -> AppSettings.TranslationProviderType)? = nil
+        selectedProvider: (() -> AppSettings.TranslationProviderType)? = nil,
+        fallbackLanguage: (() -> AppSettings.SourceLanguage)? = nil
     ) {
         self.store = store ?? .shared
         self.keyFor = keyFor ?? { type in
@@ -164,6 +167,12 @@ final class MeaningService: ObservableObject {
         self.google = google ?? GoogleFreeProvider()
         self.chatProvider = chatProvider ?? { AppSettings.shared.learningChatProvider }
         self.selectedProvider = selectedProvider ?? { AppSettings.shared.selectedProvider }
+        self.fallbackLanguage = fallbackLanguage ?? { AppSettings.shared.sourceLanguage }
+    }
+
+    /// The language a game's lines were collected in (T-0026)
+    func language(for game: String) -> AppSettings.SourceLanguage {
+        store.sourceLanguage(for: game, fallback: fallbackLanguage())
     }
 
     /// Which source a lookup would use now
@@ -185,8 +194,11 @@ final class MeaningService: ObservableObject {
 
     /// Look up meanings for up to `batchSize` of `wordIDs` that have none (or all of them
     /// again with `force`). Runs one request; a failure shows a message and is not retried.
-    func lookUp(wordIDs: [UUID], game: String, sourceLanguage: String, sourceCode: String, force: Bool = false) {
+    func lookUp(wordIDs: [UUID], game: String, force: Bool = false) {
         guard !isWorking else { return }
+        let language = language(for: game)
+        let sourceLanguage = language.englishName
+        let sourceCode = language.translationCode
         let data = store.data(for: game)
         let words = wordIDs.compactMap { id in data.words.first { $0.id == id } }
             .filter { force || $0.meaning == nil }
@@ -260,7 +272,8 @@ final class MeaningService: ObservableObject {
     // MARK: Sentences
 
     /// "อธิบายประโยคนี้": a short Thai explanation from the AI, saved with the sentence
-    func explain(sentenceID: UUID, game: String, sourceLanguage: String, force: Bool = false) {
+    func explain(sentenceID: UUID, game: String, force: Bool = false) {
+        let sourceLanguage = language(for: game).englishName
         guard !isWorking,
               let sentence = store.data(for: game).sentences.first(where: { $0.id == sentenceID }),
               force || sentence.explanation == nil else { return }
