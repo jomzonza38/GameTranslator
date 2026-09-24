@@ -19,6 +19,57 @@ final class OCRService: @unchecked Sendable {
     /// Minimum characters for a text to be kept (CJK words can be a single character)
     var minimumTextLength: Int = 2
 
+    // MARK: - First-use preparation
+
+    /// Vision prepares (compiles) its text-recognition model for the Neural Engine on
+    /// first use. The compiled model is cached per app, macOS build and **code-signing
+    /// identity**; when it is missing — after a macOS update, or after a build with a
+    /// different signature (ad-hoc test/Debug builds vs the certificate-signed app) used
+    /// the cache — the first recognition takes ~74 s instead of ~0.1 s (T-0017).
+    private static let readyLock = NSLock()
+    nonisolated(unsafe) private static var visionReady = false
+
+    /// Whether a recognition has finished in this process (Vision's model is ready)
+    static var isVisionReady: Bool {
+        readyLock.withLock { visionReady }
+    }
+
+    private static func markVisionReady() {
+        readyLock.withLock { visionReady = true }
+    }
+
+    /// Run one small recognition in the background at launch, so a slow model
+    /// preparation happens before the user starts translating. Costs ~0.1 s when the
+    /// model is already prepared.
+    static func warmUp(recognitionLevel: VNRequestTextRecognitionLevel, languages: [String]) {
+        DispatchQueue.global(qos: .utility).async {
+            guard let context = CGContext(
+                data: nil, width: 64, height: 32, bitsPerComponent: 8, bytesPerRow: 0,
+                space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue
+            ) else { return }
+            context.setFillColor(gray: 1, alpha: 1)
+            context.fill(CGRect(x: 0, y: 0, width: 64, height: 32))
+            guard let image = context.makeImage() else { return }
+
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = recognitionLevel
+            request.recognitionLanguages = languages
+            request.usesLanguageCorrection = true
+            request.automaticallyDetectsLanguage = false
+
+            let start = CFAbsoluteTimeGetCurrent()
+            do {
+                try VNImageRequestHandler(cgImage: image, options: [:]).perform([request])
+                markVisionReady()
+                let seconds = CFAbsoluteTimeGetCurrent() - start
+                GameLog.log(String(format: "OCR warm-up done in %.1f s%@", seconds,
+                                   seconds > 5 ? " (Vision prepared its model — first use after a macOS update or a differently signed build)" : ""))
+            } catch {
+                GameLog.log("OCR warm-up failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
     /// Perform OCR on a CGImage
     /// - Parameters:
     ///   - image: The captured frame
@@ -57,6 +108,7 @@ final class OCRService: @unchecked Sendable {
                 let handler = VNImageRequestHandler(cgImage: image, options: [:])
                 do {
                     try handler.perform([request])
+                    Self.markVisionReady()
                     let texts = self.detectedTexts(from: request.results ?? [])
                     continuation.resume(returning: OCRFrame(texts: texts, imageSize: imageSize))
                 } catch {

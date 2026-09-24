@@ -166,6 +166,14 @@ Key behaviours to preserve:
 - `CGRequestScreenCaptureAccess()` is called at most once per installed build.
 - A second launched copy waits 3 s for the old one to exit, otherwise it notifies
   the running copy (`com.worawalan.GameTranslator.showWelcome`) and quits.
+- **Vision's OCR model cache is per signing identity** (T-0017, measured): Vision
+  compiles its text-recognition model for the Neural Engine on first use and caches
+  it in `~/Library/Caches/com.worawalan.GameTranslator/com.apple.e5rt.e5bundlecache/<macOS build>/`.
+  The cache stays valid across new builds with the **same** signature, but switching
+  between ad-hoc builds (unit tests / Verify) and the cert-signed installed app makes
+  the next first OCR take **~74 s** (the log shows `MDB_MAP_FULL` at the same time). So
+  after running the tests, the owner's next app launch recompiles. The app warms Vision
+  up at launch (`OCRService.warmUp`) and shows "กำลังเตรียม OCR ครั้งแรก…" meanwhile.
 - Earlier finding (see project doc `claude/screen-recording-permission-fix.md`):
   replacing the bundle with `rm -rf` + copy, and `codesign --deep`, can reset the
   Screen Recording toggle. `build.sh` still does both — suspect it first if the

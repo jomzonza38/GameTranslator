@@ -52,6 +52,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Menu bar icon + pipeline
         statusBarController = StatusBarController()
 
+        // Let Vision prepare its OCR model now, in the background — the first
+        // recognition can take about a minute (see OCRService.warmUp)
+        let settings = AppSettings.shared
+        OCRService.warmUp(
+            recognitionLevel: settings.effectiveOCRAccuracy == .accurate ? .accurate : .fast,
+            languages: settings.sourceLanguage.visionLanguages
+        )
+
         // No Dock icon, just the menu bar
         NSApp.setActivationPolicy(.accessory)
 

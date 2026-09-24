@@ -66,4 +66,14 @@ final class OCRServiceTests: XCTestCase {
         let hello = try XCTUnwrap(frame.texts.first { $0.text.uppercased().contains("HELLO") })
         XCTAssertLessThan(hello.boundingBox.maxY, 0.55)
     }
+
+    func testVisionIsReadyAfterARecognition() async throws {
+        // T-0017: the "preparing OCR" status is shown only until one recognition finished
+        _ = try await makeService().recognizeText(in: image(text: nil), imageSize: CGSize(width: 800, height: 200))
+        XCTAssertTrue(OCRService.isVisionReady)
+    }
+
+    func testPreparingStatusIsThai() {
+        XCTAssertTrue(PipelineStatus.preparingOCR.displayName.hasPrefix("กำลังเตรียม OCR"))
+    }
 }

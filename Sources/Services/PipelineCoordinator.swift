@@ -510,6 +510,20 @@ final class PipelineCoordinator: ObservableObject {
             let ocrStart = CFAbsoluteTimeGetCurrent()
             var textsDetected = 0
 
+            // Vision may still be preparing its model (first use): say so, since this
+            // first OCR can take about a minute
+            let isFirstOCR = !OCRService.isVisionReady
+            if isFirstOCR {
+                status = .preparingOCR
+                panelController.setPreparingOCR(true)
+            }
+            defer {
+                if isFirstOCR {
+                    panelController.setPreparingOCR(false)
+                    if status == .preparingOCR { status = .running }
+                }
+            }
+
             // Step 2: per region — OCR, merge lines, diff, reuse known translations
             var works: [RegionFrameWork] = []
             if captureRegions.isEmpty {

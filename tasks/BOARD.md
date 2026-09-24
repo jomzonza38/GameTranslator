@@ -11,7 +11,7 @@ Lifecycle and who may set each status: `WORKFLOW.md` §3.
 | ID | Title | Status | Priority | Depends on | Next step by |
 |---|---|---|---|---|---|
 | [T-0016](T-0016-idle-cpu-while-capturing.md) | A static screen must cost almost no CPU while capturing | REVIEW | P2 | — | Cowork (review) + owner (AC-3, AC-4 manual) |
-| [T-0017](T-0017-slow-first-ocr-after-new-build.md) | Find out why the first OCR after a new build takes ~74 s | READY | P2 | — | Claude Code |
+| [T-0017](T-0017-slow-first-ocr-after-new-build.md) | Find out why the first OCR after a new build takes ~74 s | REVIEW | P2 | — | Cowork (review) + owner (AC-2 manual) |
 
 ## Closed
 

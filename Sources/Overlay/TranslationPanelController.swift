@@ -17,6 +17,8 @@ final class TranslationPanelData: ObservableObject {
 
     @Published var entries: [Entry] = []
     @Published var isCollapsed = false
+    /// First OCR of this launch is waiting for Vision to prepare its model
+    @Published var isPreparingOCR = false
 
     func update(from regions: [TranslatedRegion]) {
         // Sort by vertical position (top to bottom) for natural reading order
@@ -157,7 +159,7 @@ struct TranslationPanelContent: View {
                     Image(systemName: "text.magnifyingglass")
                         .font(.system(size: 24))
                         .foregroundColor(.white.opacity(0.3))
-                    Text("กำลังรอข้อความ...")
+                    Text(data.isPreparingOCR ? "กำลังเตรียม OCR ครั้งแรก… (อาจนานถึง ~1 นาที)" : "กำลังรอข้อความ...")
                         .font(.system(size: 12))
                         .foregroundColor(.white.opacity(0.4))
                     Spacer()
@@ -399,6 +401,13 @@ final class TranslationPanelController: NSObject, NSWindowDelegate {
 
     func updateRegions(_ regions: [TranslatedRegion]) {
         panelData.update(from: regions)
+    }
+
+    /// Show "preparing OCR" instead of "waiting for text" while the first OCR runs
+    func setPreparingOCR(_ preparing: Bool) {
+        if panelData.isPreparingOCR != preparing {
+            panelData.isPreparingOCR = preparing
+        }
     }
 
     // MARK: - Window Setup

@@ -6,6 +6,8 @@ enum PipelineStatus: String {
     case idle = "Idle"
     case capturing = "Capturing..."
     case running = "Running"
+    /// First OCR of this launch is still waiting for Vision to prepare its model
+    case preparingOCR = "Preparing OCR"
     case error = "Error"
 
     var displayName: String {
@@ -13,6 +15,7 @@ enum PipelineStatus: String {
         case .idle: return "พร้อมใช้งาน"
         case .capturing: return "กำลังจับภาพ..."
         case .running: return "กำลังทำงาน"
+        case .preparingOCR: return "กำลังเตรียม OCR ครั้งแรก… (อาจนานถึง ~1 นาที)"
         case .error: return "เกิดข้อผิดพลาด"
         }
     }
