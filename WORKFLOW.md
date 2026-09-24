@@ -9,6 +9,8 @@ rules (build, git, stability, architecture) are in `CLAUDE.md`.
 > มาทำ (*อย่างไร*) build + test + ตรวจ `git diff` แล้วเขียนผลลงในไฟล์ Task และตั้งเป็น
 > REVIEW → Cowork ตรวจเทียบ Acceptance Criteria แล้วตั้ง DONE หรือสร้าง Corrective
 > Task ใหม่ (ไม่แก้ Task เดิม) → เจ้าของโปรเจกต์เป็นคนสั่ง commit / push เท่านั้น
+> ทุกงานทำและ commit บน branch **`develop`** ส่วน **`main`** เก็บเฉพาะงานที่รีวิวแล้ว
+> และจะอัปเดตเมื่อเจ้าของสั่ง merge `develop` → `main` เท่านั้น (ปกติคือจบ milestone)
 
 ## 1. Roles
 
@@ -104,6 +106,14 @@ Every status change appends one row to the task's **Status history** table
    allow stacking first. When asked to commit, one task = one commit, with the task
    ID in the message; whoever commits records the short hash in the task's Result
    (*Commit* line) and in the BOARD row.
+   **Branches:**
+   - `develop` is the working branch: task commits, Cowork's docs commits and hash
+     records all go there.
+   - `main` holds reviewed work only. Nobody commits on `main` directly.
+   - `main` is updated only when the **owner** asks to merge `develop` into it — normally
+     when a milestone is done (all its tasks DONE, manual checks passed). Default:
+     fast-forward merge, or a GitHub PR `develop → main` if the owner prefers.
+   - CI runs on pushes to `main` and on PRs, not on pushes to `develop`.
 9. **Stability rules in `CLAUDE.md` apply to every task** (no repeated Screen
    Recording prompt after a rebuild, no crash/freeze after reopen or game restart,
    build never broken). Cowork does not write tasks that require breaking them
@@ -136,11 +146,12 @@ gotchas* before specifying anything touching capture, permissions or build.
 4. Ask the owner to run `[manual]` steps if any; record the outcome.
 5. Fill *Review* → set `DONE` or `REVIEW_FAILED` (+ corrective task). Update BOARD.
 6. Turn accepted *Proposed follow-ups* into backlog items or new tasks.
-7. Remind the owner the task is ready to commit.
+7. Remind the owner the task is ready to commit (on `develop`). When a milestone is
+   complete, suggest merging `develop` into `main`.
 
 ## 6. Claude Code procedure (summary — details in `CLAUDE.md`)
 
-Pick READY task → check working tree → read spec + code → `BLOCKED` if unclear →
+Pick READY task → check branch is `develop` and working tree → read spec + code → `BLOCKED` if unclear →
 `IN_PROGRESS` → implement within scope → bump version → tests + Release build →
 review `git status` / `git diff` → check every AC with evidence → fill Result →
 `REVIEW` (or stay/`BLOCKED` with reason) → report to owner in Thai → no commit unless asked.

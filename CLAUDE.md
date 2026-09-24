@@ -12,6 +12,22 @@ files in `tasks/` — see "Working on a task" below and `WORKFLOW.md`.
 - Make changes **in this repo's working tree**; never hand over loose files.
 - **Do not commit or push unless the owner explicitly asks** in the conversation.
   Leave changes uncommitted and report them.
+- **Branches — work on `develop`, `main` is for reviewed releases:**
+  - All task work and every commit happen on **`develop`**. Never commit directly on
+    `main`.
+  - Before starting work, check `git branch --show-current` is `develop`. If it isn't,
+    stop and ask the owner — don't switch branches yourself while there are
+    uncommitted changes.
+  - "push" means `git push` of `develop` (tracks `origin/develop`). Push `main` only when
+    the owner explicitly says so.
+  - `main` moves only when the owner asks to merge `develop` into it — normally at the
+    end of a milestone, after Cowork's review and the owner's manual checks. Default:
+    `git checkout main && git merge --ff-only develop && git checkout develop` (or a
+    GitHub PR `develop → main` if the owner prefers). If `--ff-only` fails, stop and
+    report — don't create merge commits or rebase on your own.
+  - CI (`.github/workflows/build.yml`) runs on pushes to `main` and on pull requests,
+    **not** on pushes to `develop`. The local Verify step is the only check before
+    `main`, unless a PR is opened.
 - **Bump the version together with the code change** (so it lands in the same
   commit) — `CFBundleShortVersionString` in `Resources/Info.plist` is the only
   version source. Semver: fix → patch, feature/visible behaviour → minor.
@@ -93,7 +109,8 @@ Files: `ROADMAP.md` (Cowork's plan), `tasks/BOARD.md` (index),
 When the owner says "ทำ T-NNNN" (or "ทำ task ถัดไป" = lowest-numbered `READY` task
 whose `Depends on` tasks are `DONE`):
 
-1. **Check you may start.** The task must be `READY`. Run `git status`: if source
+1. **Check you may start.** The task must be `READY`, and the current branch must be
+   `develop` (see *Branches*). Run `git status`: if source
    changes from another task are still uncommitted (anything outside `tasks/`,
    `ROADMAP.md`, `WORKFLOW.md`), stop and ask the owner to commit them or to allow
    stacking. One task at a time.
@@ -120,8 +137,8 @@ whose `Depends on` tasks are `DONE`):
    exactly what fails. **Never set `DONE`** — only Cowork does. Update BOARD
    (*Next step by* → Cowork). Then reply to the owner in Thai: task, outcome,
    changed files, manual checks needed.
-9. **Don't commit or push** unless the owner asks. If asked, one commit per task,
-   and fill the *Commit* line in the task's Result and the BOARD.
+9. **Don't commit or push** unless the owner asks. If asked, one commit per task on
+   `develop`, and fill the *Commit* line in the task's Result and the BOARD.
 
 Never edit the Cowork-owned sections of a task (header except Status, Objective →
 Definition of Done, Review) and never edit `ROADMAP.md` priorities. Without a task
