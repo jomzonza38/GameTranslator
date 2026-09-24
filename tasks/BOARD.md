@@ -10,7 +10,7 @@ Lifecycle and who may set each status: `WORKFLOW.md` §3.
 
 | ID | Title | Status | Priority | Depends on | Next step by |
 |---|---|---|---|---|---|
-| [T-0020](T-0020-map-captured-content-to-screen.md) | Outlines and overlay text must sit exactly on the game text | IN_PROGRESS | P1 | — | Claude Code (round 2 — cause found, see Review) |
+| [T-0020](T-0020-map-captured-content-to-screen.md) | Outlines and overlay text must sit exactly on the game text | REVIEW | P1 | — | Cowork (review) + owner (AC-3…AC-6 manual) |
 | [T-0021](T-0021-point-at-game-text-scrolls-panel.md) | Pointing at a text in the game brings its translation into view in the panel | READY | P2 | T-0020 | Claude Code (after T-0020) |
 | [T-0018](T-0018-panel-shows-source-thumbnail.md) | In full-screen mode, each panel entry shows where its text came from | REVIEW (committed `c47e4ce`) | P2 | — | owner (AC-5…AC-7 manual) — code review ✅, AC-4 ✅ |
 

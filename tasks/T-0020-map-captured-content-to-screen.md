@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **Status** | IN_PROGRESS |
+| **Status** | REVIEW |
 | **Type** | fix |
 | **Priority** | P1 |
 | **Version impact** | patch |
@@ -157,7 +157,101 @@ outline now surrounds the text.
 - If neither, and the outline is still off, the values say where the remaining offset
   comes from (e.g. the window frame vs the captured area), and round 2 fixes that.
 
+### Round 2 (2026-09-24) — map with the window ScreenCaptureKit actually captures
+
+**Confirmed cause (AC-1)** — from the owner's log of round 1 (v1.11.30, full-screen
+Graveyard Keeper; lines quoted in the Review below):
+- `contentRect` is in **output points**: × `scaleFactor` gives buffer pixels
+  (`1920×1205` → `3840×2410`).
+- In steady state `contentRect = 1743×1205`, `contentScale = 0.908`. So ScreenCaptureKit
+  captures a window of `contentRect / contentScale` ≈ **1920 × 1327 pt**.
+- CGWindowList reports the window as `(0,38 1920×1205)`: **122 pt shorter**, with the same
+  left and bottom edges. In full-screen the captured window includes the title-bar area
+  hidden above the screen (top at y ≈ −84).
+- The app mapped OCR boxes (normalized to the captured window) onto the CGWindowList
+  rect, so every box was squeezed into 1205 instead of 1327 pt and started 122 pt lower.
+  That is **one row too low** for text in the middle of the screen: predicted 644–682 px,
+  observed 641–683 px. x was right because both widths are 1920.
+- Before round 1, the stream was also sized from the start snapshot, which added the
+  earlier ~0.88× scale error. Round 1's resize fixed that, but it targeted the
+  CGWindowList size, so SCK kept shrinking the 1327 pt window by 0.908.
+
+**Changes**
+1. **Mapping frame = the captured window.** `CaptureGeometry.capturedWindowSize`
+   (`contentRect / contentScale`) and `mappingFrame(cgBounds:capturedSize:)` — that size,
+   placed with the CG bounds' left and bottom edges. `runPipeline` maps boxes, places the
+   overlay and builds `sourceRect` with it. Without usable frame info it falls back to
+   the CG bounds, as before.
+2. **One confirmed unit rule instead of the candidate search** (interim review item 1/2):
+   content pixels = `contentRect × scaleFactor`. It is used only when a scaleFactor is
+   present, the rect fits the buffer and covers ≥ 25 % of it; otherwise the whole buffer
+   is used and the log says so. Tested: "contentRect in points, scaleFactor nil" → no crop.
+3. **Stream sized from the captured window** (× 2), so `contentScale` returns to 1.0 and
+   OCR gets full resolution. It uses the captured size when known, else the CG size —
+   never both, so they can't fight. **`ResizeGovernor`** (pure, tested): a new size must
+   stay the same for 0.5 s (a full-screen transition passes through several sizes), and at
+   most 3 resizes per 10 s. So the stream can't bounce between two sizes; a hold-back is
+   logged once.
+4. **Regions** (normalized to the visible window, where the selector draws them) are
+   converted into the captured image with `convertNormalized(from: CG bounds, to: mapping
+   frame)` before cropping and filtering. It's the identity for normal windows, so
+   existing regions cover the same part of the game (Req 4).
+5. **Off-screen text** (interim item 5): boxes whose source rect doesn't touch the visible
+   window (the hidden area above the screen) are dropped before layout. Partly visible
+   ones are kept.
+6. **Log** (item 4): `Window frame (CGWindowList): … → mapping frame (captured window): …`
+   and `captured window=W×H pt` on the frame-geometry line.
+
+Thumbnails (T-0018) are unaffected: they are cut from the same image at the same boxes
+(Req 5).
+
+
 ## Result
+
+**Outcome:** PARTIAL — `[code]`/`[test]`/`[build]` criteria pass; AC-3 … AC-6 pending owner
+**Version:** 1.11.29 → 1.11.30 (round 1, `6730abe`) → 1.11.31 (round 2)
+**Commit:** round 1 `6730abe`; round 2 not committed (owner asked for T-0020 round 2 and T-0021 first, review after)
+
+### Acceptance criteria
+| AC | Result | Evidence |
+|---|---|---|
+| AC-1 | ✅ pass | *Round 2 → Confirmed cause*: measured from the owner's log (contentRect units, captured window 1920×1327 vs CG 1920×1205, prediction 644–682 px vs observed 641–683 px) and why the mapping-frame fix addresses it. |
+| AC-2 | ✅ pass | `CaptureGeometryTests` (9): buffer = window; no frame info; **the owner's full-screen scene** (content crop 3486×2410, captured 1920×1327, mapping frame y −84, text maps back within 2 pt; round-1 mapping is > 40 pt off); scaleFactor nil → no crop; rect not fitting → not used; content filling the buffer; window size changed since start → captured-size target; region conversion visible → captured; text above the screen. `ResizeGovernorTests` (4): no resize for the same size, settle time, target change restarts the wait, bouncing capped. |
+| AC-3…AC-6 | ⏳ pending owner | Steps below. |
+| AC-7 | ✅ pass | `Executed 145 tests, with 0 failures`, `** TEST SUCCEEDED **`, `** BUILD SUCCEEDED **`. |
+
+### Build & test
+```
+Executed 145 tests, with 0 failures (0 unexpected)
+** TEST SUCCEEDED **
+** BUILD SUCCEEDED **
+```
+
+### Changed files (round 2)
+```
+ Resources/Info.plist                         | 1.11.31
+ Sources/Services/ScreenCaptureService.swift  | confirmed content rule, captured size, mapping frame, ResizeGovernor, requestResize
+ Sources/Services/PipelineCoordinator.swift   | mapping frame in runPipeline, region conversion, off-screen filter, log
+ Tests/CaptureGeometryTests.swift             | rewritten for the confirmed rule (9) + ResizeGovernorTests (4)
+```
+
+### Manual checks for the owner
+After `./build.sh` (v1.11.31):
+- **AC-3:** full-screen Graveyard Keeper, stone cutter menu, Panel mode, no regions →
+  hover each entry → the outline surrounds that text (not a row lower).
+- **AC-4:** same scene, Overlay mode → each Thai box sits on its English text.
+- **AC-5:** windowed game → start → resize the window or toggle full-screen → wait for a
+  change on screen → outline/overlay still on the text; no crash, no permission prompt.
+  The log shows at most a few `Capture resized to the captured window …` lines, not a
+  stream of them.
+- **AC-6:** with an existing region → it still covers the same area and its
+  translations sit on the text.
+Please also send
+`grep -E "Capture geometry|Capture frame geometry|Window frame|Capture resize" ~/Desktop/GameTranslator.log`
+from the AC-3 run, to confirm `contentScale` is back to 1.000 after the resize.
+
+### Proposed follow-ups
+- none
 
 ---
 
@@ -239,3 +333,5 @@ and send the output + a screenshot.
 | 2026-09-24 | (IN_PROGRESS) | Claude Code | round 1 done (capture follows window size, crop to content rect, diagnostics, AC-2 tests pass); waiting for the owner's geometry log for AC-1 |
 | 2026-09-24 | — | Cowork | interim review of round 1; waiting for owner's geometry log |
 | 2026-09-24 | — | Cowork | round 1 tested by owner: y still off; cause identified from log (SCK window 122 pt taller than CG bounds) |
+| 2026-09-24 | (IN_PROGRESS) | Claude Code | round 2 started (owner: do T-0020 round 2 and T-0021, review after) |
+| 2026-09-24 | IN_PROGRESS → REVIEW | Claude Code | round 2: cause confirmed from the log, mapping frame = captured window, resize governor; AC-3…AC-6 manual pending owner |

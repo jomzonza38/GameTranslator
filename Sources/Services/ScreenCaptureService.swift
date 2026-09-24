@@ -17,7 +17,9 @@ protocol ScreenCaptureDelegate: AnyObject {
     /// `image` is nil when the frame has exactly the same pixels as the previous one
     /// (ScreenCaptureKit keeps sending frames for a static window); `fingerprint`
     /// identifies the pixels either way.
-    func screenCaptureService(_ service: ScreenCaptureService, didCaptureFrame image: CGImage?, fingerprint: UInt64, contentRect: CGRect)
+    /// `capturedWindowSize` = the size (points) of the window ScreenCaptureKit captured
+    /// (from the frame info; nil if unknown).
+    func screenCaptureService(_ service: ScreenCaptureService, didCaptureFrame image: CGImage?, fingerprint: UInt64, contentRect: CGRect, capturedWindowSize: CGSize?)
     /// Capture ended on its own — not through stopCapture(). Called at most once per session.
     func screenCaptureService(_ service: ScreenCaptureService, didStopUnexpectedly reason: CaptureStopReason)
 }
@@ -37,45 +39,82 @@ struct WindowGoneDetector {
 
 /// How the captured buffer relates to the game window on screen (T-0020).
 /// Pure functions — the mapping every overlay box, outline and region relies on.
+///
+/// Measured on the owner's Mac (T-0020, full-screen game): `SCStreamFrameInfo.contentRect`
+/// is in output points (× `scaleFactor` = buffer pixels), and ScreenCaptureKit captures
+/// the window at `contentRect.size / contentScale` points — for a full-screen window that
+/// is ~122 pt taller than its CGWindowList bounds (the hidden title-bar area above the
+/// screen), with the same left and bottom edges.
 enum CaptureGeometry {
     /// Output pixels per window point (the stream is configured at 2× the window size)
     static let captureScale: CGFloat = 2
 
+    struct PixelSize: Equatable {
+        let width: Int
+        let height: Int
+    }
+
     /// Stream size for a window size (points)
-    static func captureSize(forWindow size: CGSize) -> (width: Int, height: Int) {
-        (max(2, Int((size.width * captureScale).rounded())), max(2, Int((size.height * captureScale).rounded())))
+    static func captureSize(forWindow size: CGSize) -> PixelSize {
+        PixelSize(
+            width: max(2, Int((size.width * captureScale).rounded())),
+            height: max(2, Int((size.height * captureScale).rounded()))
+        )
     }
 
-    /// Whether the stream must be reconfigured: the window's size no longer matches it,
-    /// so ScreenCaptureKit would scale / pad the window inside the old buffer
-    static func needsResize(configured: (width: Int, height: Int), window size: CGSize) -> Bool {
-        let wanted = captureSize(forWindow: size)
-        return abs(wanted.width - configured.width) > 2 || abs(wanted.height - configured.height) > 2
+    /// More than rounding noise apart
+    static func differs(_ a: PixelSize, _ b: PixelSize) -> Bool {
+        abs(a.width - b.width) > 2 || abs(a.height - b.height) > 2
     }
 
-    /// Where the window's content sits inside the output buffer, in buffer pixels, from
-    /// the frame's `SCStreamFrameInfo`. Its units are not documented precisely, so the
-    /// candidates (× contentScale × scaleFactor, × scaleFactor, as-is) are tried and the
-    /// largest one that fits inside the buffer wins. Missing info → the whole buffer.
-    static func contentPixelRect(contentRect: CGRect?, contentScale: CGFloat?, scaleFactor: CGFloat?, bufferSize: CGSize) -> CGRect {
-        let full = CGRect(origin: .zero, size: bufferSize)
-        guard let rect = contentRect, rect.width > 0, rect.height > 0 else { return full }
-        let scale = scaleFactor ?? 1
-        let candidates = [scale * (contentScale ?? 1), scale, 1]
-            .map { CGRect(x: rect.minX * $0, y: rect.minY * $0, width: rect.width * $0, height: rect.height * $0) }
+    /// The captured window's content inside the buffer, in buffer pixels:
+    /// `contentRect × scaleFactor`. Nil (= use the whole buffer) when the frame info is
+    /// missing or doesn't make sense for this buffer (no scaleFactor, doesn't fit, or
+    /// implausibly small) — cropping to a wrong rect would silently lose text.
+    static func contentPixelRect(contentRect: CGRect?, scaleFactor: CGFloat?, bufferSize: CGSize) -> CGRect? {
+        guard let rect = contentRect, let scale = scaleFactor, scale > 0,
+              rect.width > 0, rect.height > 0 else { return nil }
+        let pixels = CGRect(x: rect.minX * scale, y: rect.minY * scale, width: rect.width * scale, height: rect.height * scale)
         let tolerance: CGFloat = 2
-        let fitting = candidates.filter {
-            $0.minX >= -tolerance && $0.minY >= -tolerance
-                && $0.maxX <= bufferSize.width + tolerance && $0.maxY <= bufferSize.height + tolerance
-        }
-        guard let best = fitting.max(by: { $0.width * $0.height < $1.width * $1.height }) else { return full }
-        return best.intersection(full).integral
+        guard pixels.minX >= -tolerance, pixels.minY >= -tolerance,
+              pixels.maxX <= bufferSize.width + tolerance, pixels.maxY <= bufferSize.height + tolerance,
+              pixels.width >= bufferSize.width * 0.25, pixels.height >= bufferSize.height * 0.25 else { return nil }
+        return pixels.intersection(CGRect(origin: .zero, size: bufferSize)).integral
     }
 
     /// Whether the content is worth cropping to (it doesn't already fill the buffer)
     static func contentIsInset(_ content: CGRect, bufferSize: CGSize) -> Bool {
         content.minX > 2 || content.minY > 2
             || content.width < bufferSize.width - 4 || content.height < bufferSize.height - 4
+    }
+
+    /// Size of the window ScreenCaptureKit captured, in points: contentRect / contentScale
+    static func capturedWindowSize(contentRect: CGRect?, contentScale: CGFloat?) -> CGSize? {
+        guard let rect = contentRect, rect.width > 0, rect.height > 0 else { return nil }
+        let scale = contentScale ?? 1
+        guard scale > 0.05 else { return nil }
+        return CGSize(width: rect.width / scale, height: rect.height / scale)
+    }
+
+    /// Where the captured window is on screen (CG coordinates): its size from the frame
+    /// info, placed with the same left and bottom edges as the CGWindowList bounds.
+    /// Without frame info, the CGWindowList bounds.
+    static func mappingFrame(cgBounds: CGRect, capturedSize: CGSize?) -> CGRect {
+        guard let size = capturedSize, size.width > 0, size.height > 0 else { return cgBounds }
+        return CGRect(x: cgBounds.minX, y: cgBounds.maxY - size.height, width: size.width, height: size.height)
+    }
+
+    /// A rect normalized to `from` → normalized to `to` (both CG screen rects). Regions are
+    /// drawn over the visible window (CGWindowList bounds) but OCR crops the captured image.
+    static func convertNormalized(_ rect: CGRect, from: CGRect, to: CGRect) -> CGRect {
+        guard to.width > 0, to.height > 0 else { return rect }
+        let screen = screenRect(forContentBox: rect, windowFrame: from)
+        return CGRect(
+            x: (screen.minX - to.minX) / to.width,
+            y: (screen.minY - to.minY) / to.height,
+            width: screen.width / to.width,
+            height: screen.height / to.height
+        )
     }
 
     /// A box normalized to the whole buffer → normalized to the window content in it
@@ -97,6 +136,50 @@ enum CaptureGeometry {
             width: box.width * windowFrame.width,
             height: box.height * windowFrame.height
         )
+    }
+
+    /// Whether any of `rect` is on the visible part of the window (the captured window
+    /// can reach above the screen, where nothing should be drawn)
+    static func isVisible(_ rect: CGRect, within visible: CGRect) -> Bool {
+        let overlap = rect.intersection(visible)
+        return !overlap.isNull && overlap.width > 0 && overlap.height > 0
+    }
+}
+
+/// Decides when to reconfigure the stream size. A new size must stay the same for
+/// `settleTime` (full-screen transitions pass through several sizes), and at most
+/// `maxResizes` happen per `period` — so the stream can never bounce between two sizes.
+struct ResizeGovernor {
+    var settleTime: TimeInterval = 0.5
+    var period: TimeInterval = 10
+    var maxResizes = 3
+
+    private(set) var pendingTarget: CaptureGeometry.PixelSize?
+    private var pendingSince: TimeInterval = 0
+    private(set) var recentResizes: [TimeInterval] = []
+
+    /// Whether to resize to `target` now (records the resize when true)
+    mutating func shouldResize(to target: CaptureGeometry.PixelSize, configured: CaptureGeometry.PixelSize, now: TimeInterval) -> Bool {
+        guard CaptureGeometry.differs(target, configured) else {
+            pendingTarget = nil
+            return false
+        }
+        if pendingTarget != target {
+            pendingTarget = target
+            pendingSince = now
+            return false
+        }
+        guard now - pendingSince >= settleTime else { return false }
+        recentResizes.removeAll { now - $0 >= period }
+        guard recentResizes.count < maxResizes else { return false }
+        recentResizes.append(now)
+        pendingTarget = nil
+        return true
+    }
+
+    /// Too many resizes recently — further ones are being held back
+    func isHoldingBack(now: TimeInterval) -> Bool {
+        recentResizes.filter { now - $0 < period }.count >= maxResizes
     }
 }
 
@@ -181,9 +264,11 @@ final class ScreenCaptureService: NSObject, @unchecked Sendable {
     }
     private var activeSession: ActiveSession?
     private var watchdogTimer: DispatchSourceTimer?
-    /// Stream output size in pixels (kept equal to the window size × 2, T-0020)
-    private var configuredSize: (width: Int, height: Int)?
+    /// Stream output size in pixels (kept equal to the captured window × 2, T-0020)
+    private var configuredSize: CaptureGeometry.PixelSize?
     private var isResizing = false
+    private var resizeGovernor = ResizeGovernor()
+    private var loggedResizeHoldBack = false
     private var frameRate: Double = 5
 
     /// Get list of available windows for capture
@@ -250,9 +335,12 @@ final class ScreenCaptureService: NSObject, @unchecked Sendable {
         // The delegate hears when ScreenCaptureKit stops the stream on its own
         let stream = SCStream(filter: filter, configuration: config, delegate: self)
 
-        let output = StreamOutput { [weak self] image, fingerprint in
+        let output = StreamOutput { [weak self] image, fingerprint, capturedWindowSize in
             guard let self, self.sessionLock.withLock({ self.starts.isCurrent(generation) }) else { return }
-            self.delegate?.screenCaptureService(self, didCaptureFrame: image, fingerprint: fingerprint, contentRect: window.frame)
+            self.delegate?.screenCaptureService(
+                self, didCaptureFrame: image, fingerprint: fingerprint,
+                contentRect: window.frame, capturedWindowSize: capturedWindowSize
+            )
         }
 
         try stream.addStreamOutput(output, type: .screen, sampleHandlerQueue: captureQueue)
@@ -295,6 +383,8 @@ final class ScreenCaptureService: NSObject, @unchecked Sendable {
             activeSession = nil
             configuredSize = nil
             isResizing = false
+            resizeGovernor = ResizeGovernor()
+            loggedResizeHoldBack = false
             timer = watchdogTimer
             watchdogTimer = nil
             return running
@@ -311,42 +401,44 @@ final class ScreenCaptureService: NSObject, @unchecked Sendable {
         sessionLock.withLock { self.frameRate = frameRate }
     }
 
-    /// Whether the stream's output size no longer matches `windowSize` (cheap, any thread)
-    func captureNeedsResize(forWindowSize windowSize: CGSize) -> Bool {
-        sessionLock.withLock {
-            guard stream != nil, !isResizing, let configuredSize else { return false }
-            return CaptureGeometry.needsResize(configured: configuredSize, window: windowSize)
-        }
-    }
-
-    /// Follow a window resize / full-screen switch: reconfigure the output to the new
-    /// window size so the window fills the buffer again (T-0020). A failure is logged
-    /// and capture continues at the old size (frames are still mapped via their
-    /// content rect). Doesn't touch permissions.
-    func resizeCapture(toWindowSize windowSize: CGSize) async {
+    /// Keep the output sized to the captured window (× 2) so ScreenCaptureKit doesn't
+    /// scale it down (contentScale 1). Called for every frame; `ResizeGovernor` decides.
+    /// Uses the captured size from the frame info, falling back to the CGWindowList size
+    /// — never both, so the two can't fight. Doesn't touch permissions.
+    func requestResize(capturedWindowSize: CGSize?, cgWindowSize: CGSize?) {
+        guard let windowSize = capturedWindowSize ?? cgWindowSize else { return }
         let target = CaptureGeometry.captureSize(forWindow: windowSize)
-        let claimed = sessionLock.withLock { () -> (SCStream, Double)? in
-            guard let stream, !isResizing, let configuredSize,
-                  CaptureGeometry.needsResize(configured: configuredSize, window: windowSize) else { return nil }
-            isResizing = true
-            return (stream, frameRate)
-        }
-        guard let (stream, frameRate) = claimed else { return }
-
-        do {
-            try await stream.updateConfiguration(Self.streamConfiguration(size: target, frameRate: frameRate))
-            let old = sessionLock.withLock { () -> (width: Int, height: Int)? in
-                defer { configuredSize = target; isResizing = false }
-                return configuredSize
+        let now = CFAbsoluteTimeGetCurrent()
+        let claimed = sessionLock.withLock { () -> (SCStream, Double, CaptureGeometry.PixelSize)? in
+            guard let stream, !isResizing, let configuredSize else { return nil }
+            guard resizeGovernor.shouldResize(to: target, configured: configuredSize, now: now) else {
+                if resizeGovernor.isHoldingBack(now: now), CaptureGeometry.differs(target, configuredSize), !loggedResizeHoldBack {
+                    loggedResizeHoldBack = true
+                    GameLog.log("Capture resize held back (too many in a short time); staying at \(configuredSize.width)x\(configuredSize.height)")
+                }
+                return nil
             }
-            GameLog.log("Capture resized to follow the window: \(old.map { "\($0.width)x\($0.height)" } ?? "?") → \(target.width)x\(target.height)")
-        } catch {
-            sessionLock.withLock { isResizing = false }
-            GameLog.log("Capture resize failed (keeping the old size): \(error.localizedDescription)")
+            isResizing = true
+            return (stream, frameRate, configuredSize)
+        }
+        guard let (stream, frameRate, old) = claimed else { return }
+
+        Task {
+            do {
+                try await stream.updateConfiguration(Self.streamConfiguration(size: target, frameRate: frameRate))
+                self.sessionLock.withLock {
+                    self.configuredSize = target
+                    self.isResizing = false
+                }
+                GameLog.log("Capture resized to the captured window: \(old.width)x\(old.height) → \(target.width)x\(target.height)")
+            } catch {
+                self.sessionLock.withLock { self.isResizing = false }
+                GameLog.log("Capture resize failed (keeping the old size): \(error.localizedDescription)")
+            }
         }
     }
 
-    private static func streamConfiguration(size: (width: Int, height: Int), frameRate: Double) -> SCStreamConfiguration {
+    private static func streamConfiguration(size: CaptureGeometry.PixelSize, frameRate: Double) -> SCStreamConfiguration {
         let config = SCStreamConfiguration()
         config.width = size.width
         config.height = size.height
@@ -445,8 +537,11 @@ extension ScreenCaptureService: SCStreamDelegate {
 // MARK: - Stream Output Handler
 
 private final class StreamOutput: NSObject, SCStreamOutput, @unchecked Sendable {
-    /// (image, fingerprint) — image is nil when the pixels equal the previous frame's
-    private let onFrame: (CGImage?, UInt64) -> Void
+    /// (image, fingerprint, captured window size) — image is nil when the pixels equal
+    /// the previous frame's
+    private let onFrame: (CGImage?, UInt64, CGSize?) -> Void
+    /// Captured window size of the last converted frame (reused for identical frames)
+    private var lastCapturedWindowSize: CGSize?
     private var lastFrameTime: CFAbsoluteTime = 0
     private var lastFingerprint: UInt64?
     /// Fallback fingerprints for frames that couldn't be read (always "new")
@@ -457,7 +552,7 @@ private final class StreamOutput: NSObject, SCStreamOutput, @unchecked Sendable 
     /// Last logged geometry, so the log only gets a line when it changes
     private var lastGeometryDescription: String?
 
-    init(onFrame: @escaping (CGImage?, UInt64) -> Void) {
+    init(onFrame: @escaping (CGImage?, UInt64, CGSize?) -> Void) {
         self.onFrame = onFrame
     }
 
@@ -481,7 +576,7 @@ private final class StreamOutput: NSObject, SCStreamOutput, @unchecked Sendable 
 
         // Same pixels as the previous frame: skip the image conversion
         if fingerprint == lastFingerprint {
-            onFrame(nil, fingerprint)
+            onFrame(nil, fingerprint, lastCapturedWindowSize)
             return
         }
 
@@ -494,17 +589,21 @@ private final class StreamOutput: NSObject, SCStreamOutput, @unchecked Sendable 
         let bufferSize = CGSize(width: cgImage.width, height: cgImage.height)
         let info = Self.frameInfo(sampleBuffer)
         let content = CaptureGeometry.contentPixelRect(
-            contentRect: info.contentRect, contentScale: info.contentScale,
-            scaleFactor: info.scaleFactor, bufferSize: bufferSize
+            contentRect: info.contentRect, scaleFactor: info.scaleFactor, bufferSize: bufferSize
         )
-        logGeometryIfChanged(bufferSize: bufferSize, info: info, content: content)
-        if CaptureGeometry.contentIsInset(content, bufferSize: bufferSize),
+        // Captured window size only when the content rect was usable — otherwise the
+        // image is the whole buffer and the CGWindowList bounds are the best guess
+        let capturedWindowSize = content == nil ? nil
+            : CaptureGeometry.capturedWindowSize(contentRect: info.contentRect, contentScale: info.contentScale)
+        logGeometryIfChanged(bufferSize: bufferSize, info: info, content: content, capturedWindowSize: capturedWindowSize)
+        if let content, CaptureGeometry.contentIsInset(content, bufferSize: bufferSize),
            let cropped = cgImage.cropping(to: content) {
             cgImage = cropped
         }
 
         lastFingerprint = fingerprint
-        onFrame(cgImage, fingerprint)
+        lastCapturedWindowSize = capturedWindowSize
+        onFrame(cgImage, fingerprint, capturedWindowSize)
     }
 
     private static func frameInfo(_ sampleBuffer: CMSampleBuffer) -> (contentRect: CGRect?, contentScale: CGFloat?, scaleFactor: CGFloat?) {
@@ -523,13 +622,15 @@ private final class StreamOutput: NSObject, SCStreamOutput, @unchecked Sendable 
     private func logGeometryIfChanged(
         bufferSize: CGSize,
         info: (contentRect: CGRect?, contentScale: CGFloat?, scaleFactor: CGFloat?),
-        content: CGRect
+        content: CGRect?,
+        capturedWindowSize: CGSize?
     ) {
         let description = "buffer=\(Int(bufferSize.width))x\(Int(bufferSize.height))"
             + " contentRect=\(info.contentRect.map(ScreenCaptureService.describe) ?? "nil")"
             + " contentScale=\(info.contentScale.map { String(format: "%.3f", $0) } ?? "nil")"
             + " scaleFactor=\(info.scaleFactor.map { String(format: "%.1f", $0) } ?? "nil")"
-            + " → window content in buffer=\(ScreenCaptureService.describe(content))"
+            + " → window content in buffer=\(content.map(ScreenCaptureService.describe) ?? "whole buffer (frame info unusable)")"
+            + " captured window=\(capturedWindowSize.map { String(format: "%.0fx%.0f pt", $0.width, $0.height) } ?? "unknown")"
         guard description != lastGeometryDescription else { return }
         lastGeometryDescription = description
         GameLog.log("Capture frame geometry: \(description)")

@@ -396,11 +396,11 @@ final class PipelineCoordinator: ObservableObject {
     /// Frames whose pixels were processed recently — a static screen, or a caret /
     /// "next" arrow blinking between a few states — give the same OCR result and are
     /// skipped, unless the window moved or text is waiting to become stable.
-    private func handleCapturedFrame(image: CGImage?, fingerprint: UInt64, contentRect: CGRect) {
+    private func handleCapturedFrame(image: CGImage?, fingerprint: UInt64, startFrame: CGRect, capturedWindowSize: CGSize?) {
         guard isRunning else { return }
         let frame: CapturedFrame
         if let image {
-            frame = CapturedFrame(image: image, contentRect: contentRect, fingerprint: fingerprint)
+            frame = CapturedFrame(image: image, startFrame: startFrame, fingerprint: fingerprint, capturedWindowSize: capturedWindowSize)
             lastFrame = frame
         } else if let last = lastFrame, last.fingerprint == fingerprint {
             frame = last
@@ -409,7 +409,7 @@ final class PipelineCoordinator: ObservableObject {
         }
 
         let windowFrame = screenCapture.currentWindowFrame
-        followWindowSize(windowFrame)
+        followWindowSize(windowFrame, capturedWindowSize: frame.capturedWindowSize)
 
         guard frameFilter.shouldProcess(
             frame.fingerprint,
@@ -419,18 +419,19 @@ final class PipelineCoordinator: ObservableObject {
         processFrame(frame)
     }
 
-    /// Keep the capture sized to the window (resize / full-screen switch while
-    /// translating) and log the window frame whenever it changes (T-0020)
-    private func followWindowSize(_ windowFrame: CGRect?) {
-        guard let windowFrame else { return }
-        if windowFrame != lastLoggedWindowFrame {
-            lastLoggedWindowFrame = windowFrame
-            GameLog.log("Window frame (CGWindowList): \(ScreenCaptureService.describe(windowFrame))")
+    /// Keep the capture sized to the captured window (resize / full-screen switch while
+    /// translating) and log the window frame and the frame used for mapping whenever
+    /// they change (T-0020)
+    private func followWindowSize(_ windowFrame: CGRect?, capturedWindowSize: CGSize?) {
+        if let windowFrame {
+            let mapping = CaptureGeometry.mappingFrame(cgBounds: windowFrame, capturedSize: capturedWindowSize)
+            let key = CGRect(x: windowFrame.minX, y: windowFrame.minY, width: windowFrame.width, height: mapping.height)
+            if key != lastLoggedWindowFrame {
+                lastLoggedWindowFrame = key
+                GameLog.log("Window frame (CGWindowList): \(ScreenCaptureService.describe(windowFrame)) → mapping frame (captured window): \(ScreenCaptureService.describe(mapping))")
+            }
         }
-        if screenCapture.captureNeedsResize(forWindowSize: windowFrame.size) {
-            let capture = screenCapture
-            Task { await capture.resizeCapture(toWindowSize: windowFrame.size) }
-        }
+        screenCapture.requestResize(capturedWindowSize: capturedWindowSize, cgWindowSize: windowFrame?.size)
     }
 
     /// Run the pipeline on `frame` (or queue it behind the run in progress). Re-runs
@@ -456,7 +457,7 @@ final class PipelineCoordinator: ObservableObject {
 
         while let frame = next, !Task.isCancelled {
             frameFilter.recordProcessed(frame.fingerprint, windowFrame: screenCapture.currentWindowFrame)
-            await runPipeline(image: frame.image, contentRect: frame.contentRect)
+            await runPipeline(frame)
             next = pendingFrame
             pendingFrame = nil
         }
@@ -523,7 +524,8 @@ final class PipelineCoordinator: ObservableObject {
         let textsToTranslate: [String]
     }
 
-    private func runPipeline(image: CGImage, contentRect: CGRect) async {
+    private func runPipeline(_ frame: CapturedFrame) async {
+        let image = frame.image
         let pipelineStart = CFAbsoluteTimeGetCurrent()
 
         await applyGlossaryChangesIfNeeded()
@@ -538,7 +540,10 @@ final class PipelineCoordinator: ObservableObject {
             ocrService.minimumTextLength = settings.sourceLanguage.usesWordSpacing ? 2 : 1
 
             let imageSize = CGSize(width: image.width, height: image.height)
-            let windowFrame = screenCapture.currentWindowFrame ?? contentRect
+            // The visible window (CGWindowList) and the window ScreenCaptureKit captured —
+            // the image covers the latter, which can reach above the screen (T-0020)
+            let visibleFrame = screenCapture.currentWindowFrame ?? frame.startFrame
+            let windowFrame = CaptureGeometry.mappingFrame(cgBounds: visibleFrame, capturedSize: frame.capturedWindowSize)
             let captureRegions = settings.captureRegions
             let ocrStart = CFAbsoluteTimeGetCurrent()
             var textsDetected = 0
@@ -581,15 +586,17 @@ final class PipelineCoordinator: ObservableObject {
                     }
 
                     let regionOCRStart = CFAbsoluteTimeGetCurrent()
+                    // Regions are drawn over the visible window; the image is the captured one
+                    let regionInImage = CaptureGeometry.convertNormalized(captureRegion.rect, from: visibleFrame, to: windowFrame)
                     let ocrFrame = try await ocrService.recognizeText(
                         in: image,
                         imageSize: imageSize,
-                        cropTo: captureRegion.rect
+                        cropTo: regionInImage
                     )
                     textsDetected += ocrFrame.texts.count
 
                     works.append(prepareRegion(
-                        ocrFrame: ocrFrame, filterRegion: captureRegion.rect,
+                        ocrFrame: ocrFrame, filterRegion: regionInImage,
                         regionColor: captureRegion.color, regionName: captureRegion.name,
                         regionID: captureRegion.id, state: state,
                         ocrTime: CFAbsoluteTimeGetCurrent() - regionOCRStart
@@ -618,6 +625,11 @@ final class PipelineCoordinator: ObservableObject {
                     regionID: work.regionID,
                     translation: work.state.translation(for:)
                 )
+            }
+            // Text in the part of the captured window above the screen (full-screen
+            // title-bar area) can't be shown or outlined
+            allTranslatedRegions = allTranslatedRegions.filter {
+                CaptureGeometry.isVisible($0.sourceRect, within: visibleFrame)
             }
 
             // Step 5: Resolve overlapping regions — push colliding boxes down
@@ -947,8 +959,11 @@ final class PipelineCoordinator: ObservableObject {
 /// A captured frame and the fingerprint of its pixels
 struct CapturedFrame {
     let image: CGImage
-    let contentRect: CGRect
+    /// The window's frame when capture started (fallback if CGWindowList has none)
+    let startFrame: CGRect
     let fingerprint: UInt64
+    /// Size (points) of the window ScreenCaptureKit captured; nil if unknown (T-0020)
+    let capturedWindowSize: CGSize?
 }
 
 /// Remembers the fingerprints of recently processed frames. A frame with the same
@@ -1028,9 +1043,9 @@ enum StaticScreenRerun {
 // MARK: - ScreenCaptureDelegate
 
 extension PipelineCoordinator: ScreenCaptureDelegate {
-    nonisolated func screenCaptureService(_ service: ScreenCaptureService, didCaptureFrame image: CGImage?, fingerprint: UInt64, contentRect: CGRect) {
+    nonisolated func screenCaptureService(_ service: ScreenCaptureService, didCaptureFrame image: CGImage?, fingerprint: UInt64, contentRect: CGRect, capturedWindowSize: CGSize?) {
         Task { @MainActor in
-            handleCapturedFrame(image: image, fingerprint: fingerprint, contentRect: contentRect)
+            handleCapturedFrame(image: image, fingerprint: fingerprint, startFrame: contentRect, capturedWindowSize: capturedWindowSize)
         }
     }
 
