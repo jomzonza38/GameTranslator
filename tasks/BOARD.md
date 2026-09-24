@@ -10,7 +10,7 @@ Lifecycle and who may set each status: `WORKFLOW.md` §3.
 
 | ID | Title | Status | Priority | Depends on | Next step by |
 |---|---|---|---|---|---|
-| [T-0015](T-0015-resume-on-static-screen.md) | Resuming, switching provider and retrying must work on a static screen | READY | P2 | — (corrects T-0012) | Claude Code |
+| [T-0015](T-0015-resume-on-static-screen.md) | Resuming, switching provider and retrying must work on a static screen | REVIEW | P2 | — (corrects T-0012) | Cowork (review) + owner (AC-3, AC-4 manual) |
 
 ## Closed
 

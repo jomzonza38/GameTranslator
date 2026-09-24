@@ -68,6 +68,11 @@ final class TranslationContextBuilder {
     /// stayed the same for `settleDelay` (so typing doesn't re-translate per keystroke).
     /// - Returns: true when a new glossary was just applied and cached translations
     ///   should be dropped.
+    /// When an edited glossary waiting to settle will be applied (nil = nothing pending)
+    var pendingGlossaryAppliesAt: CFAbsoluteTime? {
+        pendingGlossary.map { $0.since + settleDelay }
+    }
+
     func updateGlossary(_ glossary: [GlossaryEntry], now: CFAbsoluteTime) -> Bool {
         let current = glossary.filter(\.isUsable)
         guard current != appliedGlossary else {

@@ -39,6 +39,11 @@ final class PipelineCoordinator: ObservableObject {
     private var isProcessing = false
     /// The running drain loop, cancelled by stop()
     private var pipelineTask: Task<Void, Never>?
+    /// The latest captured frame, re-run when work is waiting on a static screen
+    /// (ScreenCaptureKit sends no frames while the window doesn't change)
+    private var lastFrame: (image: CGImage, contentRect: CGRect)?
+    /// A scheduled pipeline run on `lastFrame` (see StaticScreenRerun)
+    private var rerunTask: Task<Void, Never>?
     /// Moved on by every start and teardown, so a start that finishes after the user
     /// stopped (or started again) leaves the current state alone
     private var sessions = StartGeneration()
@@ -88,6 +93,21 @@ final class PipelineCoordinator: ObservableObject {
                 Task { @MainActor in
                     self?.applyRegionVisibility(regions)
                 }
+            }
+            .store(in: &cancellables)
+
+        // Game language or glossary edited while running: on-screen text must be
+        // translated again even if the game window doesn't change
+        settings.$sourceLanguage
+            .dropFirst()
+            .sink { [weak self] _ in
+                Task { @MainActor in self?.scheduleRerun(after: Self.rerunSoon) }
+            }
+            .store(in: &cancellables)
+        settings.$gameProfiles
+            .dropFirst()
+            .sink { [weak self] _ in
+                Task { @MainActor in self?.scheduleRerun(after: Self.rerunSoon) }
             }
             .store(in: &cancellables)
     }
@@ -202,6 +222,9 @@ final class PipelineCoordinator: ObservableObject {
         pipelineTask?.cancel()
         pipelineTask = nil
         pendingFrame = nil
+        rerunTask?.cancel()
+        rerunTask = nil
+        lastFrame = nil
 
         await screenCapture.stopCapture()
         overlayController.hide()
@@ -227,6 +250,9 @@ final class PipelineCoordinator: ObservableObject {
             globalState.failedAt.removeAll()
             GameLog.log("▶︎ Translation resumed (\(translationService.currentProviderName))")
         }
+
+        // New key or provider: translate what is on screen now, even if it is static
+        scheduleRerun(after: Self.rerunSoon)
     }
 
     /// Switch between overlay and panel display modes while running
@@ -345,6 +371,7 @@ final class PipelineCoordinator: ObservableObject {
 
     private func processFrame(_ image: CGImage, contentRect: CGRect) {
         guard isRunning else { return }
+        lastFrame = (image, contentRect)
         guard !isProcessing else {
             pendingFrame = (image, contentRect)
             return
@@ -371,6 +398,49 @@ final class PipelineCoordinator: ObservableObject {
 
     /// How long to wait before retrying a text whose translation request failed
     private let retryDelay: CFAbsoluteTime = 3
+
+    /// Delay for a re-run triggered by an event (resume, key, provider, language, glossary)
+    private static let rerunSoon: TimeInterval = 0.2
+
+    /// Run the pipeline on the last frame after `delay`, unless a new frame's run
+    /// reschedules first. Guarded like a real frame: running session only, and
+    /// processFrame queues it behind a run in progress (isProcessing).
+    private func scheduleRerun(after delay: TimeInterval) {
+        rerunTask?.cancel()
+        guard isRunning else { return }
+        let session = sessions.current
+        rerunTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
+            guard !Task.isCancelled, let self,
+                  self.sessions.isCurrent(session), self.isRunning,
+                  let frame = self.lastFrame else { return }
+            self.processFrame(frame.image, contentRect: frame.contentRect)
+        }
+    }
+
+    /// After a run: re-run on the same frame when work is waiting (text not yet stable,
+    /// a retry back-off, a glossary edit settling); otherwise stay idle
+    private func planRerun(after works: [RegionFrameWork]) {
+        var untranslatedFailedAt: [CFAbsoluteTime?] = []
+        for work in works {
+            for text in work.currentTexts where work.state.translation(for: text.text) == nil {
+                untranslatedFailedAt.append(work.state.failedAt[text.text])
+            }
+        }
+        let delay = StaticScreenRerun.delay(
+            untranslatedFailedAt: untranslatedFailedAt,
+            isPaused: isTranslationPaused,
+            glossaryAppliesAt: contextBuilder.pendingGlossaryAppliesAt,
+            now: CFAbsoluteTimeGetCurrent(),
+            retryDelay: retryDelay
+        )
+        if let delay {
+            scheduleRerun(after: delay)
+        } else {
+            rerunTask?.cancel()
+            rerunTask = nil
+        }
+    }
 
     /// One region's intermediate results for the current frame
     private struct RegionFrameWork {
@@ -477,6 +547,8 @@ final class PipelineCoordinator: ObservableObject {
             } else {
                 panelController.updateRegions(resolvedRegions)
             }
+
+            planRerun(after: works)
 
             // Update stats
             let totalTime = CFAbsoluteTimeGetCurrent() - pipelineStart
@@ -750,6 +822,44 @@ final class PipelineCoordinator: ObservableObject {
         contextBuilder.clearRecentLines()
         await translationService.clearCache()
     }
+}
+
+// MARK: - Static screen re-run
+
+/// When to run the pipeline again on the last captured frame. ScreenCaptureKit sends
+/// no frames while the game window doesn't change (e.g. a dialog waiting for a click),
+/// so waiting work would otherwise wait forever.
+enum StaticScreenRerun {
+    /// Delay until the next re-run, or nil to stay idle.
+    /// - Parameters:
+    ///   - untranslatedFailedAt: one entry per on-screen text without a translation —
+    ///     when its last request failed, or nil if it is waiting to become stable
+    ///   - isPaused: requests are paused (refused key): untranslated text can't progress
+    ///   - glossaryAppliesAt: when a glossary edit settles, if one is pending
+    static func delay(
+        untranslatedFailedAt: [CFAbsoluteTime?],
+        isPaused: Bool,
+        glossaryAppliesAt: CFAbsoluteTime?,
+        now: CFAbsoluteTime,
+        retryDelay: CFAbsoluteTime,
+        stabilityRecheck: TimeInterval = 0.5
+    ) -> TimeInterval? {
+        var waits: [TimeInterval] = []
+        if let glossaryAppliesAt {
+            waits.append(glossaryAppliesAt - now)
+        }
+        if !isPaused {
+            for failedAt in untranslatedFailedAt {
+                // Back-off ends at failedAt + retryDelay; unstable text is checked again soon
+                waits.append(failedAt.map { $0 + retryDelay - now } ?? stabilityRecheck)
+            }
+        }
+        guard let soonest = waits.min() else { return nil }
+        return max(soonest, minimumDelay)
+    }
+
+    /// Never re-run more often than this
+    static let minimumDelay: TimeInterval = 0.1
 }
 
 // MARK: - ScreenCaptureDelegate
