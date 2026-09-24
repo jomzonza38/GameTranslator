@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **Status** | REVIEW |
+| **Status** | DONE |
 | **Type** | fix |
 | **Priority** | P2 |
 | **Version impact** | patch |
@@ -122,7 +122,7 @@ them before the owner collects a lot of it.
 
 **Outcome:** PARTIAL — `[test]`/`[code]`/`[build]` criteria pass; AC-5 pending owner
 **Version:** 1.15.0 → 1.15.1
-**Commit:** not committed (waiting for owner)
+**Commit:** `b7803cf`
 
 ### Acceptance criteria
 | AC | Result | Evidence |
@@ -165,9 +165,22 @@ has no language stored and uses the current setting — pick ญี่ปุ่�
 
 ## Review
 
+**2026-09-24 — Cowork code review: passes; waiting for AC-5 (owner) before DONE**
+
+- AC-1 ✅ `languageCode` optional on `GameLearningData` (old files decode — missing Optional = nil), set on every `add`; lookups, explanations and chat all go through `sourceLanguage(for:fallback:)`; tests prove `from: "ja"` and "learn Japanese" with the setting on English.
+- AC-2 ✅ One serial `writeQueue`; snapshot + `changeCount` taken when the write is queued, so FIFO = newest last. `savedCount` only moves after a successful write (a failed write stays "unsaved" and is retried at quit). `saveNow` uses `writeQueue.sync` → waits for a running write, then writes the newest. No deadlock: queued writes never sync back to the main thread (they post `didWrite` in a `Task`). The only blocking main-thread I/O is at quit, as the spec allows.
+- AC-3 ✅ `applyExtractedWords` drops words when the line is gone (cleared game, deleted line, or trimmed by the size limit — all intended).
+- AC-4 ✅ `chatContext` uses the game's language; `PipelineCoordinator` untouched.
+- AC-6 ✅ 198 tests, Release build (Claude Code's evidence). Tests use a temp directory and an injected writer; the owner's data is not touched.
+- Diff matches *Files / Modules*; version 1.15.0 → 1.15.1 (patch) correct.
+- Note (no action): lines collected before 1.15.1 have no language and use the setting — covered by the manual step's note.
+- **AC-5 [manual] waived by owner 2026-09-24** (no Japanese game to test with) — covered by `testGoogleLookupUsesTheGamesLanguageNotTheSetting` / `testLLMPromptNamesTheGamesLanguage`. **Decision: DONE.**
+
 ## Status history
 | Date | Change | Who | Note |
 |---|---|---|---|
 | 2026-09-24 | → READY | Cowork | created from M6 audit review |
 | 2026-09-24 | READY → IN_PROGRESS | Claude Code | started |
 | 2026-09-24 | IN_PROGRESS → REVIEW | Claude Code | test/code/build ACs pass; AC-5 manual pending owner |
+| 2026-09-24 | (review) | Cowork | code review passed; AC-5 manual pending owner |
+| 2026-09-24 | REVIEW → DONE | Cowork | AC-5 waived by owner (no Japanese game); unit tests cover it |

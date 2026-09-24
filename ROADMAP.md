@@ -29,7 +29,7 @@ From the owner — every task must keep these (details in `CLAUDE.md`):
 | M3 — Providers & settings hygiene | Keys saved cleanly, right cache per provider, no endless retries on a refused key, clean test logs | done 2026-09-24 | T-0010 … T-0015 (T-0012 corrected by T-0015) |
 | M4 — Performance & first use | Near-idle CPU on a static screen; no silent minute-long wait on the first OCR | done 2026-09-24 | T-0016, T-0017 |
 | M5 — Know where each translation came from | When the whole window is translated (text in many places, e.g. Graveyard Keeper), the player can tell which translation belongs to which text | done 2026-09-24 | T-0018, T-0019 (→ T-0020), T-0021 |
-| M6 — Learn the language from the games you play | Words and sentences the app translated are kept per game; the player sees what each word/sentence means, practises with a multiple-choice quiz and can ask an AI why a line was translated that way | done 2026-09-24 (fix T-0026 open) | T-0022 … T-0025, T-0026 |
+| M6 — Learn the language from the games you play | Words and sentences the app translated are kept per game; the player sees what each word/sentence means, practises with a multiple-choice quiz and can ask an AI why a line was translated that way | done 2026-09-24 | T-0022 … T-0025, T-0026 |
 
 ## Backlog (not yet tasks)
 

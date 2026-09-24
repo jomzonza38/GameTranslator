@@ -10,7 +10,6 @@ Lifecycle and who may set each status: `WORKFLOW.md` §3.
 
 | ID | Title | Status | Priority | Depends on | Next step by |
 |---|---|---|---|---|---|
-| [T-0026](T-0026-learning-data-correctness.md) | Learning data stays correct: per-game language, ordered saves, clean clear | REVIEW | P2 | — | Cowork (review) + owner (AC-5 manual) |
 
 ## Closed
 
@@ -43,3 +42,4 @@ Lifecycle and who may set each status: `WORKFLOW.md` §3.
 | [T-0023](T-0023-word-meanings.md) | Each word and sentence in the Learning window explains what it means | DONE | 2026-09-24 | `b8ad367` | T-0026 |
 | [T-0024](T-0024-learning-quiz.md) | Multiple-choice quiz on the words and sentences collected from the game | DONE | 2026-09-24 | `2717f05` | — |
 | [T-0025](T-0025-ask-ai-about-a-translation.md) | Ask the AI why a sentence was translated that way | DONE | 2026-09-24 | `141cba0` | T-0026 |
+| [T-0026](T-0026-learning-data-correctness.md) | Learning data stays correct: per-game language, ordered saves, clean clear | DONE | 2026-09-24 | `b7803cf` | — |
