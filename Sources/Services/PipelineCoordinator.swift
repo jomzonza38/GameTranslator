@@ -62,6 +62,21 @@ final class PipelineCoordinator: ObservableObject {
     /// (T-0028: how often the exact fingerprint changes on a static Switch screen)
     private var frameStats: FrameStats?
 
+    // Capture card mode (T-0034): OCR only when the text area really changed
+    /// Translating the capture card picture (started with `maxCaptureSize`)
+    private var isCaptureCardMode = false
+    /// Which areas (whole picture / each region) changed beyond capture noise
+    private var lumaDetector = LumaChangeDetector()
+    /// Slows OCR while it keeps reading the same text
+    private var ocrPacer = OCRPacer()
+    /// Last OCR result per region, reused for regions whose pixels didn't change
+    private var lastRegionOCR: [UUID: OCRFrame] = [:]
+    /// Window frame the luma baselines were recorded at (a move/resize re-reads all)
+    private var lumaWindowFrame: CGRect?
+    /// A change held back by the pacer is scheduled as a re-run; a finishing run
+    /// must not cancel it
+    private var hasPacedRerun = false
+
     /// Callback when capture regions change (add/remove/clear)
     var onRegionsChanged: (() -> Void)?
 
@@ -137,7 +152,9 @@ final class PipelineCoordinator: ObservableObject {
     /// Start translating a window. `profileID` names the game profile (title,
     /// glossary); by default it is the window's app name. The capture card picture
     /// (T-0028) passes the card's name — the app can't tell which Switch game runs.
-    func start(window: Any, profileID: String? = nil) async throws {
+    /// `maxCaptureSize` (pixels) = capture card mode (T-0034): the capture never goes
+    /// above the picture's resolution and OCR runs only when the text area changed.
+    func start(window: Any, profileID: String? = nil, maxCaptureSize: CGSize? = nil) async throws {
         guard !isRunning else { return }
 
         // Always refresh provider to pick up the latest API key
@@ -155,6 +172,8 @@ final class PipelineCoordinator: ObservableObject {
         // Per-game profile (title, glossary) keyed by the game's app name
         settings.selectGame(id: profileID ?? scWindow.owningApplication?.applicationName ?? scWindow.title ?? "Unknown")
         frameStats = profileID == nil ? nil : FrameStats()
+        isCaptureCardMode = maxCaptureSize != nil
+        resetCaptureCardChangeState()
         contextBuilder.reset(glossary: settings.currentProfile.glossary)
 
         let session = sessions.begin()
@@ -188,7 +207,9 @@ final class PipelineCoordinator: ObservableObject {
         do {
             try await screenCapture.startCapture(
                 window: scWindow,
-                frameRate: settings.captureFrameRate
+                frameRate: settings.captureFrameRate,
+                maxOutputSize: maxCaptureSize,
+                computesLumaGrid: isCaptureCardMode
             )
         } catch {
             // Stopped (or restarted) while starting: that stop already cleaned up and
@@ -250,6 +271,7 @@ final class PipelineCoordinator: ObservableObject {
         rerunTask = nil
         lastFrame = nil
         frameFilter.reset()
+        resetCaptureCardChangeState()
         isWaitingForStableText = false
         lastLoggedWindowFrame = nil
         sourceThumbnails.removeAll()
@@ -403,7 +425,7 @@ final class PipelineCoordinator: ObservableObject {
     /// Frames whose pixels were processed recently — a static screen, or a caret /
     /// "next" arrow blinking between a few states — give the same OCR result and are
     /// skipped, unless the window moved or text is waiting to become stable.
-    private func handleCapturedFrame(image: CGImage?, fingerprint: UInt64, startFrame: CGRect, capturedWindowSize: CGSize?) {
+    private func handleCapturedFrame(image: CGImage?, fingerprint: UInt64, startFrame: CGRect, capturedWindowSize: CGSize?, lumaGrid: LumaGrid?) {
         guard isRunning else { return }
         if var stats = frameStats {
             if let line = stats.record(changed: image != nil, now: CFAbsoluteTimeGetCurrent()) {
@@ -413,7 +435,8 @@ final class PipelineCoordinator: ObservableObject {
         }
         let frame: CapturedFrame
         if let image {
-            frame = CapturedFrame(image: image, startFrame: startFrame, fingerprint: fingerprint, capturedWindowSize: capturedWindowSize)
+            frame = CapturedFrame(image: image, startFrame: startFrame, fingerprint: fingerprint,
+                                  capturedWindowSize: capturedWindowSize, lumaGrid: lumaGrid)
             lastFrame = frame
         } else if let last = lastFrame, last.fingerprint == fingerprint {
             frame = last
@@ -424,6 +447,11 @@ final class PipelineCoordinator: ObservableObject {
         let windowFrame = screenCapture.currentWindowFrame
         followWindowSize(windowFrame, capturedWindowSize: frame.capturedWindowSize)
 
+        if isCaptureCardMode, let grid = frame.lumaGrid {
+            handleCaptureCardFrame(frame, grid: grid, windowFrame: windowFrame)
+            return
+        }
+
         guard frameFilter.shouldProcess(
             frame.fingerprint,
             windowFrame: windowFrame,
@@ -431,6 +459,59 @@ final class PipelineCoordinator: ObservableObject {
         ) else { return }
         frameStats?.processed += 1
         processFrame(frame)
+    }
+
+    /// Capture card mode (T-0034): OCR only the areas (whole picture, or each enabled
+    /// region) whose brightness grid moved beyond capture noise, and at most once a
+    /// second while OCR keeps reading the same text. A move/resize or text waiting to
+    /// become stable reads everything, as before.
+    private func handleCaptureCardFrame(_ frame: CapturedFrame, grid: LumaGrid, windowFrame: CGRect?) {
+        let mustReadAll = isWaitingForStableText || windowFrame != lumaWindowFrame
+        let areas = lumaAreas(for: frame, windowFrame: windowFrame)
+        let changed = mustReadAll ? Set(areas.map(\.0)) : lumaDetector.changedAreas(grid, areas: areas)
+        guard !changed.isEmpty else { return }
+
+        if !mustReadAll {
+            let wait = ocrPacer.delayBeforeNextRun(now: CFAbsoluteTimeGetCurrent())
+            if wait > 0 {
+                // Read it when the pacer allows, even if no new frame arrives
+                lastFrame = frame
+                scheduleRerun(after: wait)
+                hasPacedRerun = true
+                return
+            }
+        }
+
+        var work = frame
+        if !mustReadAll {
+            let regionIDs = changed.compactMap { area -> UUID? in
+                if case .region(let id) = area { return id }
+                return nil
+            }
+            work.onlyRegions = changed.contains(.whole) ? nil : Set(regionIDs)
+        }
+        frameStats?.processed += 1
+        processFrame(work)
+    }
+
+    /// The areas watched for change: each enabled region (rect in the captured image),
+    /// or the whole picture without regions
+    private func lumaAreas(for frame: CapturedFrame, windowFrame: CGRect?) -> [(LumaChangeDetector.Area, CGRect?)] {
+        let regions = settings.captureRegions.filter(\.isEnabled)
+        guard !settings.captureRegions.isEmpty else { return [(.whole, nil)] }
+        let visibleFrame = windowFrame ?? frame.startFrame
+        let mapping = CaptureGeometry.mappingFrame(cgBounds: visibleFrame, capturedSize: frame.capturedWindowSize)
+        return regions.map { region in
+            (.region(region.id), CaptureGeometry.convertNormalized(region.rect, from: visibleFrame, to: mapping))
+        }
+    }
+
+    private func resetCaptureCardChangeState() {
+        lumaDetector.reset()
+        ocrPacer.reset()
+        lastRegionOCR.removeAll()
+        lumaWindowFrame = nil
+        hasPacedRerun = false
     }
 
     /// Keep the capture sized to the captured window (resize / full-screen switch while
@@ -452,7 +533,11 @@ final class PipelineCoordinator: ObservableObject {
     /// on the last frame (StaticScreenRerun) call this directly, bypassing the filter.
     private func processFrame(_ frame: CapturedFrame) {
         guard isRunning else { return }
-        lastFrame = frame
+        hasPacedRerun = false
+        // Re-runs of the last frame read every region
+        var last = frame
+        last.onlyRegions = nil
+        lastFrame = last
         guard !isProcessing else {
             pendingFrame = frame
             return
@@ -471,6 +556,11 @@ final class PipelineCoordinator: ObservableObject {
 
         while let frame = next, !Task.isCancelled {
             frameFilter.recordProcessed(frame.fingerprint, windowFrame: screenCapture.currentWindowFrame)
+            if isCaptureCardMode, let grid = frame.lumaGrid {
+                let windowFrame = screenCapture.currentWindowFrame
+                lumaDetector.record(grid, areas: lumaAreas(for: frame, windowFrame: windowFrame).map(\.0))
+                lumaWindowFrame = windowFrame
+            }
             await runPipeline(frame)
             next = pendingFrame
             pendingFrame = nil
@@ -520,7 +610,7 @@ final class PipelineCoordinator: ObservableObject {
         )
         if let delay {
             scheduleRerun(after: delay)
-        } else {
+        } else if !hasPacedRerun {
             rerunTask?.cancel()
             rerunTask = nil
         }
@@ -602,11 +692,19 @@ final class PipelineCoordinator: ObservableObject {
                     let regionOCRStart = CFAbsoluteTimeGetCurrent()
                     // Regions are drawn over the visible window; the image is the captured one
                     let regionInImage = CaptureGeometry.convertNormalized(captureRegion.rect, from: visibleFrame, to: windowFrame)
-                    let ocrFrame = try await ocrService.recognizeText(
-                        in: image,
-                        imageSize: imageSize,
-                        cropTo: regionInImage
-                    )
+                    let ocrFrame: OCRFrame
+                    if let only = frame.onlyRegions, !only.contains(captureRegion.id),
+                       let previous = lastRegionOCR[captureRegion.id] {
+                        // Capture card mode: this region's pixels didn't change (T-0034)
+                        ocrFrame = previous
+                    } else {
+                        ocrFrame = try await ocrService.recognizeText(
+                            in: image,
+                            imageSize: imageSize,
+                            cropTo: regionInImage
+                        )
+                        if isCaptureCardMode { lastRegionOCR[captureRegion.id] = ocrFrame }
+                    }
                     textsDetected += ocrFrame.texts.count
 
                     works.append(prepareRegion(
@@ -619,6 +717,15 @@ final class PipelineCoordinator: ObservableObject {
             }
             let ocrTime = CFAbsoluteTimeGetCurrent() - ocrStart
             guard isRunning, !Task.isCancelled else { return }
+            if isCaptureCardMode {
+                let signature = works.map { $0.currentTexts.map(\.text).joined(separator: "\n") }.joined(separator: "\u{1}")
+                let wasSlowed = ocrPacer.isSlowed
+                ocrPacer.recordRun(signature: signature, at: CFAbsoluteTimeGetCurrent())
+                if ocrPacer.isSlowed != wasSlowed {
+                    GameLog.log(ocrPacer.isSlowed ? "Capture card: same text read again — OCR at most once a second"
+                                                  : "Capture card: text changed — OCR at full rate")
+                }
+            }
 
             // Step 3: one translation request for every region together
             let translateStart = CFAbsoluteTimeGetCurrent()
@@ -985,6 +1092,11 @@ struct CapturedFrame {
     let fingerprint: UInt64
     /// Size (points) of the window ScreenCaptureKit captured; nil if unknown (T-0020)
     let capturedWindowSize: CGSize?
+    /// Brightness grid of the picture (capture card mode, T-0034)
+    var lumaGrid: LumaGrid? = nil
+    /// Capture card mode: OCR only these regions, reuse the last result for the
+    /// others (nil = all)
+    var onlyRegions: Set<UUID>? = nil
 }
 
 /// Remembers the fingerprints of recently processed frames. A frame with the same
@@ -1090,9 +1202,10 @@ enum StaticScreenRerun {
 // MARK: - ScreenCaptureDelegate
 
 extension PipelineCoordinator: ScreenCaptureDelegate {
-    nonisolated func screenCaptureService(_ service: ScreenCaptureService, didCaptureFrame image: CGImage?, fingerprint: UInt64, contentRect: CGRect, capturedWindowSize: CGSize?) {
+    nonisolated func screenCaptureService(_ service: ScreenCaptureService, didCaptureFrame image: CGImage?, fingerprint: UInt64, contentRect: CGRect, capturedWindowSize: CGSize?, lumaGrid: LumaGrid?) {
         Task { @MainActor in
-            handleCapturedFrame(image: image, fingerprint: fingerprint, startFrame: contentRect, capturedWindowSize: capturedWindowSize)
+            handleCapturedFrame(image: image, fingerprint: fingerprint, startFrame: contentRect,
+                                capturedWindowSize: capturedWindowSize, lumaGrid: lumaGrid)
         }
     }
 

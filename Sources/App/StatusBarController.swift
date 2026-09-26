@@ -630,7 +630,8 @@ final class StatusBarController: NSObject, ObservableObject {
         selectedWindowTitle = info.deviceName
         isTranslatingCaptureCard = true
         do {
-            try await pipeline.start(window: scWindow, profileID: info.deviceName)
+            // Never capture above the picture's own resolution; OCR only on real change (T-0034)
+            try await pipeline.start(window: scWindow, profileID: info.deviceName, maxCaptureSize: info.videoSize)
         } catch {
             isTranslatingCaptureCard = false
             selectedWindowTitle = nil

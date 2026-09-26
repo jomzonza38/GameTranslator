@@ -19,7 +19,9 @@ protocol ScreenCaptureDelegate: AnyObject {
     /// identifies the pixels either way.
     /// `capturedWindowSize` = the size (points) of the window ScreenCaptureKit captured
     /// (from the frame info; nil if unknown).
-    func screenCaptureService(_ service: ScreenCaptureService, didCaptureFrame image: CGImage?, fingerprint: UInt64, contentRect: CGRect, capturedWindowSize: CGSize?)
+    /// `lumaGrid` = coarse brightness grid of the window content, only when the capture
+    /// was started with `computesLumaGrid` (capture card mode, T-0034).
+    func screenCaptureService(_ service: ScreenCaptureService, didCaptureFrame image: CGImage?, fingerprint: UInt64, contentRect: CGRect, capturedWindowSize: CGSize?, lumaGrid: LumaGrid?)
     /// Capture ended on its own — not through stopCapture(). Called at most once per session.
     func screenCaptureService(_ service: ScreenCaptureService, didStopUnexpectedly reason: CaptureStopReason)
 }
@@ -54,11 +56,17 @@ enum CaptureGeometry {
         let height: Int
     }
 
-    /// Stream size for a window size (points)
-    static func captureSize(forWindow size: CGSize) -> PixelSize {
-        PixelSize(
-            width: max(2, Int((size.width * captureScale).rounded())),
-            height: max(2, Int((size.height * captureScale).rounded()))
+    /// Stream size for a window size (points). `limit` (pixels) caps it, keeping the
+    /// aspect ratio — capture card mode never captures more than the picture's own
+    /// resolution (T-0034: 2× a full-screen window cost WindowServer ~43 % CPU).
+    static func captureSize(forWindow size: CGSize, limit: CGSize? = nil) -> PixelSize {
+        var scale = captureScale
+        if let limit, limit.width > 0, limit.height > 0, size.width > 0, size.height > 0 {
+            scale = min(scale, limit.width / size.width, limit.height / size.height)
+        }
+        return PixelSize(
+            width: max(2, Int((size.width * scale).rounded())),
+            height: max(2, Int((size.height * scale).rounded()))
         )
     }
 
@@ -270,6 +278,8 @@ final class ScreenCaptureService: NSObject, @unchecked Sendable {
     private var resizeGovernor = ResizeGovernor()
     private var loggedResizeHoldBack = false
     private var frameRate: Double = 5
+    /// Largest output in pixels (capture card mode), nil = 2× the window
+    private var maxOutputSize: CGSize?
 
     /// Get list of available windows for capture
     /// Bundle identifiers of system UI that owns full-screen or decorative windows.
@@ -327,7 +337,11 @@ final class ScreenCaptureService: NSObject, @unchecked Sendable {
 
     /// Start capturing the selected window. Throws `CancellationError` if
     /// stopCapture() (or another start) ran while this start was in progress.
-    func startCapture(window: SCWindow, frameRate: Double = 5.0) async throws {
+    /// `maxOutputSize` caps the output (pixels); `computesLumaGrid` makes every frame
+    /// carry a `LumaGrid` and treats frames whose grid didn't change as unchanged
+    /// (capture card mode, T-0034).
+    func startCapture(window: SCWindow, frameRate: Double = 5.0, maxOutputSize: CGSize? = nil,
+                      computesLumaGrid: Bool = false) async throws {
         // Replace whatever is running — including a stream left by an interrupted
         // start — instead of skipping the new window and capturing the old one
         await stopCapture()
@@ -338,18 +352,18 @@ final class ScreenCaptureService: NSObject, @unchecked Sendable {
         // Size the output to the window as it is now (SCWindow.frame is a snapshot
         // from when the window list was read)
         let liveBounds = Self.windowBounds(window.windowID)
-        let size = CaptureGeometry.captureSize(forWindow: (liveBounds ?? window.frame).size)
+        let size = CaptureGeometry.captureSize(forWindow: (liveBounds ?? window.frame).size, limit: maxOutputSize)
         let config = Self.streamConfiguration(size: size, frameRate: frameRate)
         GameLog.log("Capture geometry at start: SCWindow.frame=\(Self.describe(window.frame)) live bounds=\(liveBounds.map(Self.describe) ?? "nil") output=\(size.width)x\(size.height)")
 
         // The delegate hears when ScreenCaptureKit stops the stream on its own
         let stream = SCStream(filter: filter, configuration: config, delegate: self)
 
-        let output = StreamOutput { [weak self] image, fingerprint, capturedWindowSize in
+        let output = StreamOutput(computesLumaGrid: computesLumaGrid) { [weak self] image, fingerprint, capturedWindowSize, grid in
             guard let self, self.sessionLock.withLock({ self.starts.isCurrent(generation) }) else { return }
             self.delegate?.screenCaptureService(
                 self, didCaptureFrame: image, fingerprint: fingerprint,
-                contentRect: window.frame, capturedWindowSize: capturedWindowSize
+                contentRect: window.frame, capturedWindowSize: capturedWindowSize, lumaGrid: grid
             )
         }
 
@@ -370,6 +384,7 @@ final class ScreenCaptureService: NSObject, @unchecked Sendable {
             watchdogTimer = watchdog
             configuredSize = size
             self.frameRate = frameRate
+            self.maxOutputSize = maxOutputSize
             return true
         }
         guard isCurrent else {
@@ -392,6 +407,7 @@ final class ScreenCaptureService: NSObject, @unchecked Sendable {
             selectedWindow = nil
             activeSession = nil
             configuredSize = nil
+            maxOutputSize = nil
             isResizing = false
             resizeGovernor = ResizeGovernor()
             loggedResizeHoldBack = false
@@ -417,7 +433,8 @@ final class ScreenCaptureService: NSObject, @unchecked Sendable {
     /// — never both, so the two can't fight. Doesn't touch permissions.
     func requestResize(capturedWindowSize: CGSize?, cgWindowSize: CGSize?) {
         guard let windowSize = capturedWindowSize ?? cgWindowSize else { return }
-        let target = CaptureGeometry.captureSize(forWindow: windowSize)
+        let limit = sessionLock.withLock { maxOutputSize }
+        let target = CaptureGeometry.captureSize(forWindow: windowSize, limit: limit)
         let now = CFAbsoluteTimeGetCurrent()
         let claimed = sessionLock.withLock { () -> (SCStream, Double, CaptureGeometry.PixelSize)? in
             guard let stream, !isResizing, let configuredSize else { return nil }
@@ -547,9 +564,15 @@ extension ScreenCaptureService: SCStreamDelegate {
 // MARK: - Stream Output Handler
 
 private final class StreamOutput: NSObject, SCStreamOutput, @unchecked Sendable {
-    /// (image, fingerprint, captured window size) — image is nil when the pixels equal
-    /// the previous frame's
-    private let onFrame: (CGImage?, UInt64, CGSize?) -> Void
+    /// (image, fingerprint, captured window size, luma grid) — image is nil when the
+    /// pixels equal the previous frame's (or, with a luma grid, when no grid cell moved
+    /// more than the noise threshold)
+    private let onFrame: (CGImage?, UInt64, CGSize?, LumaGrid?) -> Void
+    private let computesLumaGrid: Bool
+    /// Grid of the last frame delivered with an image
+    private var lastGrid: LumaGrid?
+    /// Brightness levels a grid cell must move for the frame to count as new
+    private let gridNoiseThreshold: Float = 3
     /// Captured window size of the last converted frame (reused for identical frames)
     private var lastCapturedWindowSize: CGSize?
     private var lastFrameTime: CFAbsoluteTime = 0
@@ -562,7 +585,8 @@ private final class StreamOutput: NSObject, SCStreamOutput, @unchecked Sendable 
     /// Last logged geometry, so the log only gets a line when it changes
     private var lastGeometryDescription: String?
 
-    init(onFrame: @escaping (CGImage?, UInt64, CGSize?) -> Void) {
+    init(computesLumaGrid: Bool, onFrame: @escaping (CGImage?, UInt64, CGSize?, LumaGrid?) -> Void) {
+        self.computesLumaGrid = computesLumaGrid
         self.onFrame = onFrame
     }
 
@@ -576,6 +600,20 @@ private final class StreamOutput: NSObject, SCStreamOutput, @unchecked Sendable 
 
         guard let pixelBuffer = sampleBuffer.imageBuffer else { return }
 
+        // Capture card mode: a picture whose grid didn't move beyond noise is the same
+        // picture — skip the fingerprint and image conversion (T-0034)
+        var grid: LumaGrid?
+        if computesLumaGrid {
+            let bufferSize = CGSize(width: CVPixelBufferGetWidth(pixelBuffer), height: CVPixelBufferGetHeight(pixelBuffer))
+            let info = Self.frameInfo(sampleBuffer)
+            let content = CaptureGeometry.contentPixelRect(contentRect: info.contentRect, scaleFactor: info.scaleFactor, bufferSize: bufferSize)
+            grid = LumaGrid.of(pixelBuffer, content: content)
+            if let grid, let lastGrid, let lastFingerprint, !grid.differs(from: lastGrid, threshold: gridNoiseThreshold) {
+                onFrame(nil, lastFingerprint, lastCapturedWindowSize, lastGrid)
+                return
+            }
+        }
+
         let fingerprint: UInt64
         if let computed = FrameFingerprint.of(pixelBuffer) {
             fingerprint = computed
@@ -586,7 +624,7 @@ private final class StreamOutput: NSObject, SCStreamOutput, @unchecked Sendable 
 
         // Same pixels as the previous frame: skip the image conversion
         if fingerprint == lastFingerprint {
-            onFrame(nil, fingerprint, lastCapturedWindowSize)
+            onFrame(nil, fingerprint, lastCapturedWindowSize, lastGrid)
             return
         }
 
@@ -613,7 +651,8 @@ private final class StreamOutput: NSObject, SCStreamOutput, @unchecked Sendable 
 
         lastFingerprint = fingerprint
         lastCapturedWindowSize = capturedWindowSize
-        onFrame(cgImage, fingerprint, capturedWindowSize)
+        lastGrid = grid
+        onFrame(cgImage, fingerprint, capturedWindowSize, grid)
     }
 
     private static func frameInfo(_ sampleBuffer: CMSampleBuffer) -> (contentRect: CGRect?, contentScale: CGFloat?, scaleFactor: CGFloat?) {
