@@ -141,5 +141,6 @@ Split into T-0027 (picture on TV + latency) → T-0028 (translation overlay) →
 - If T-0027 AC-8 shows the preview layer slower than OBS: own Metal renderer, or uncompressed 720p60.
 - From T-0032: CLAUDE.md Verify — `lsregister -u` prints -10814 / exit 1 for an already unregistered copy; add `2>/dev/null || true`.
 - Owner 2026-09-26: Kingma ran at USB 2.0 (`Device Speed = 2`, USB2 adapter) → 1080p60 NV12 can't be delivered, picture not smooth. Warn in the menu when the capture card is linked below USB 3 (IOKit device speed). Owner is buying a USB 3 adapter.
+- From T-0035: picture-only load on the MacBook Air (translation paused): WindowServer ~46 %, GameTranslator ~27 % (?), coreaudiod ~13 % (sound passthrough), kernel_task ~15 % — measure with longer `top` samples after the USB 3 adapter; find what the app does while paused.
 - From T-0028: `MeaningServiceTests.testChatterLeavesTheWordWithoutMeaningAndShowsAMessage` once took 814 s in a full run (5 s alone) — find the hang.
 - From T-0027 review F-3: log when a TV Output start is cancelled because *some* video device (not known to be the card) disconnected.
