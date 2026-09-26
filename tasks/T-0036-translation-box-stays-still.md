@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **Status** | READY |
+| **Status** | REVIEW |
 | **Type** | fix |
 | **Priority** | P1 (urgent) |
 | **Version impact** | patch |
@@ -70,14 +70,89 @@ moving — translating back and forth, never still". A still line must show one 
 ## Questions
 
 ## Implementation Notes
+- **Log first:** reading `~/Desktop/GameTranslator.log` was not permitted in this session, so the cause was
+  worked out from the code (the three effects in *Context* all follow from OCR differing run to run: the
+  overlay keys by `originalText`, `resolveOverlaps` depends on which boxes exist, boxes are the raw OCR boxes).
+  The owner's AC-5 run confirms it.
+- **Fix: `StableTextBoard`** (new `Sources/Services/StableTextBoard.swift`, pure; one per
+  `RegionPipelineState`), used in capture card mode between line merging and the diff in `prepareRegion`.
+  It remembers the texts shown (first reading + box) and maps each OCR run onto them:
+  - same text → same entry (anywhere: scrolled text keeps its entry, the box follows only if it moved a lot,
+    IoU < 0.6 — so ±3 px jitter keeps the old box);
+  - misread letters (similarity ≥ 0.85, boxes touch) → same entry, **first reading kept** → no new request;
+  - split (≥ 2 pieces inside an entry's box that add up to it) and merge (one reading covering ≥ 2 entries that
+    add up to it) → those entries; "add up" = equal letters/digits give or take ≤ 2 edits (3 % of long text),
+    strict so typewriter text can't pass as a merge;
+  - text that grows (typewriter: extends the old reading) or a different text at the same place → replaces
+    the entry at once (no grace for replaced text);
+  - an entry missing from a run stays for 1 more run (grace); missing twice → removed. While an entry is in
+    grace the pipeline re-reads the last frame after 0.5 s, so a text that really left goes even on a static
+    screen (`planRerun`, `graceRecheck`).
+- Everything downstream (diff, stability gate, cache, pacer, overlay/panel keys, `resolveOverlaps`) now sees
+  the same texts and boxes on a still screen → identical regions, no fade, no jump, no request.
+- **Req 5:** only capture card mode uses the board; ⌃⌥T window translation is unchanged (it didn't show the
+  problem at its old rate; turning it on there is a one-line change if wanted later).
+- Files: `StableTextBoard.swift` is new (pure logic, testable); `RegionPipelineState` holds the board;
+  `RegionLayout`, `TextTracker`, `OverlayContentView`, `TranslationPanelController` did not need changes.
+- CPU (T-0034/35): no extra OCR on still screens; one extra re-read of the same frame only while a text is in
+  grace.
 
 ## Result
+
+**Outcome:** PARTIAL — `[test]`/`[build]` criteria pass; AC-5 pending owner
+**Version:** 1.19.0 → 1.19.1
+**Commit:** `e5d9101`
+
+### Acceptance criteria
+| AC | Result | Evidence |
+|---|---|---|
+| AC-1 | ✅ pass | `StableTextBoardTests.testNoisyReadingsOfAStillScreenShowTheSameBoxes`: 9 runs of one screen (7↔8 texts, misread letter, merged lines, split line, ±3 px, a text missing once) → identical `buildRegions` + `resolveOverlaps` output (text + rect) every run, and no text without an existing translation (= no request). |
+| AC-2 | ✅ pass | `testTextMissingOnceStaysAndMissingTwiceGoes`. |
+| AC-3 | ✅ pass | `testNewLineIsShownAndOthersDoNotMove`, `testNextDialogueReplacesTheOldLineAtOnce`, `testTypewriterTextFollowsUntilComplete`, `testShortNewLineIsNotTakenForAPieceOfTheOldOne`, `testScrolledTextKeepsItsEntryAndMoves`. |
+| AC-4 | ✅ pass | See below. |
+| AC-5 | ⏳ pending owner | Steps below. |
+
+### Build & test
+```
+Executed 273 tests, with 0 failures (0 unexpected)
+** TEST SUCCEEDED **
+** BUILD SUCCEEDED **
+```
+
+### Changed files
+```
+ Resources/Info.plist                        | 1.19.1
+ Sources/Services/StableTextBoard.swift      | (new) maps noisy OCR runs onto the shown texts
+ Sources/Services/RegionPipelineState.swift  | textBoard (+ reset)
+ Sources/Services/PipelineCoordinator.swift  | board in prepareRegion (capture card mode), grace re-read
+ Tests/StableTextBoardTests.swift            | (new, 8 tests)
+```
+
+### Manual checks for the owner
+`./build.sh`, ⌃⌥V, full screen, no regions.
+
+**AC-5** — leave a dialogue line still for 30 s: the Thai box doesn't move, fade or change. In
+`~/Desktop/GameTranslator.log` no second `✓ "…" → "…"` line for the same English line. Next dialogue → new
+Thai ≤ 2 s; the old box goes. Also try Panel mode (entries stay still) and a menu/scrolling screen (boxes
+follow scrolled text, leave when it's gone).
+
+### Proposed follow-ups
+- Use the board for ⌃⌥T window translation too, if games show the same flicker.
 
 ---
 
 ## Review
+**Cowork, 2026-09-26 — code passes; waiting for owner AC-5.** Evidence: `build.noindex/Logs/Test` 16:33 (273 tests).
+`StableTextBoard` keeps the first reading + box per text (jitter, misread letter, split/merge, one-run gap) so
+everything downstream sees identical input; typewriter/new text replaces at once; strict "add up" rule stops
+typewriter text passing as a merge. Capture card mode only (⌃⌥T unchanged, one-line switch later).
+Note: the log step was skipped (outside-folder read blocked) — cause inferred from code; AC-5 decides.
+No blocking findings.
 
 ## Status history
 | Date | Change | Who | Note |
 |---|---|---|---|
 | 2026-09-26 | → READY | Cowork | owner: translation box keeps moving on an unchanged line |
+| 2026-09-26 | READY → IN_PROGRESS | Claude Code | started |
+| 2026-09-26 | IN_PROGRESS → REVIEW | Claude Code | test/build ACs pass; AC-5 manual pending owner |
+| 2026-09-26 | — | Cowork | code review passed; waiting for owner AC-5 |

@@ -10,7 +10,7 @@ Lifecycle and who may set each status: `WORKFLOW.md` §3.
 
 | ID | Title | Status | Priority | Depends on | Next step by |
 |---|---|---|---|---|---|
-| [T-0036](T-0036-translation-box-stays-still.md) | The translation box stays still while the dialogue doesn't change | READY | P1 | — | Claude Code |
+| [T-0036](T-0036-translation-box-stays-still.md) | The translation box stays still while the dialogue doesn't change | REVIEW | P1 | — | Owner (manual AC-5) — committed `e5d9101` |
 | [T-0029](T-0029-tv-output-settings.md) | Capture card mode (3/3): Settings tab (Mac / external display, look, delay) | PLANNED | P2 | T-0035 | Cowork (READY after T-0035) |
 
 ## Closed
