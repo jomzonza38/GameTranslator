@@ -16,6 +16,8 @@ final class StatusBarController: NSObject, ObservableObject {
     private var welcomeWindow: NSWindow?
 
     let pipeline = PipelineCoordinator()
+    /// Capture card picture on the TV (T-0027)
+    let tvOutput = TVOutputController()
 
     @Published var availableWindows: [SCWindow] = []
     @Published var selectedWindowTitle: String?
@@ -48,6 +50,13 @@ final class StatusBarController: NSObject, ObservableObject {
             self?.updateStatusIcon(running: false)
         }
 
+        // TV Output started, stopped or unplugged
+        tvOutput.onChange = { [weak self] in
+            guard let self else { return }
+            self.rebuildMenu()
+            self.updateStatusIcon(running: self.pipeline.isRunning || self.tvOutput.isActive)
+        }
+
         rebuildMenu()
         registerHotKeys()
     }
@@ -60,6 +69,11 @@ final class StatusBarController: NSObject, ObservableObject {
 
         hotKeys.register(keyCode: kVK_ANSI_T, modifiers: modifiers) { [weak self] in
             Task { @MainActor in self?.toggleTranslation() }
+        }
+
+        // ⌃⌥V start/stop TV Output (T-0027)
+        hotKeys.register(keyCode: kVK_ANSI_V, modifiers: modifiers) { [weak self] in
+            Task { @MainActor in self?.toggleTVOutput() }
         }
 
         // ⌃⌥1…9 show/hide region 1…9
@@ -81,6 +95,10 @@ final class StatusBarController: NSObject, ObservableObject {
         let statusItem = NSMenuItem(title: "สถานะ: \(pipeline.status.displayName)", action: nil, keyEquivalent: "")
         statusItem.isEnabled = false
         menu.addItem(statusItem)
+
+        if tvOutput.isActive {
+            addTVOutputInfo(to: menu)
+        }
 
         if pipeline.isRunning {
             if let title = selectedWindowTitle {
@@ -127,6 +145,12 @@ final class StatusBarController: NSObject, ObservableObject {
         // Error display
         if let error = pipeline.lastError {
             menu.addItem(NSMenuItem.separator())
+            let errorItem = NSMenuItem(title: "⚠️ \(error)", action: nil, keyEquivalent: "")
+            errorItem.isEnabled = false
+            menu.addItem(errorItem)
+        }
+        if let error = tvOutput.lastError {
+            if pipeline.lastError == nil { menu.addItem(NSMenuItem.separator()) }
             let errorItem = NSMenuItem(title: "⚠️ \(error)", action: nil, keyEquivalent: "")
             errorItem.isEnabled = false
             menu.addItem(errorItem)
@@ -268,12 +292,20 @@ final class StatusBarController: NSObject, ObservableObject {
                 fullScreenItem.isEnabled = false
             }
             menu.addItem(fullScreenItem)
-        } else {
+        } else if !tvOutput.isActive {
             let selectItem = NSMenuItem(title: "🎮 เลือก Window...", action: #selector(showWindowPicker), keyEquivalent: "t")
             selectItem.keyEquivalentModifierMask = [.control, .option]
             selectItem.target = self
             menu.addItem(selectItem)
         }
+
+        // TV Output (T-0027)
+        let tvItem = tvOutput.isActive
+            ? NSMenuItem(title: "⏹ หยุด TV Output", action: #selector(stopTVOutputAction), keyEquivalent: "v")
+            : NSMenuItem(title: "📺 เริ่ม TV Output", action: #selector(startTVOutputAction), keyEquivalent: "v")
+        tvItem.keyEquivalentModifierMask = [.control, .option]
+        tvItem.target = self
+        menu.addItem(tvItem)
 
         menu.addItem(NSMenuItem.separator())
 
@@ -368,6 +400,8 @@ final class StatusBarController: NSObject, ObservableObject {
 
     private func startTranslation(window: SCWindow) {
         Task {
+            // One session at a time: picking a game window ends TV Output
+            tvOutput.stop()
             do {
                 selectedWindowTitle = window.title ?? "Unknown"
                 try await pipeline.start(window: window)
@@ -471,9 +505,11 @@ final class StatusBarController: NSObject, ObservableObject {
         showWindowPicker()
     }
 
-    /// ⌃⌥T — start (window picker) or stop
+    /// ⌃⌥T — start (window picker) or stop; also stops TV Output when that is running
     private func toggleTranslation() {
-        if pipeline.isRunning {
+        if tvOutput.isActive {
+            tvOutput.stop()
+        } else if pipeline.isRunning {
             stopTranslation()
         } else {
             showWindowPicker()
@@ -486,6 +522,58 @@ final class StatusBarController: NSObject, ObservableObject {
             selectedWindowTitle = nil
             rebuildMenu()
             updateStatusIcon(running: false)
+        }
+    }
+
+    // MARK: - TV Output (T-0027)
+
+    /// ⌃⌥V — start or stop TV Output. Window translation is stopped first.
+    private func toggleTVOutput() {
+        if tvOutput.isActive {
+            tvOutput.stop()
+        } else {
+            startTVOutput()
+        }
+    }
+
+    @objc private func startTVOutputAction() {
+        startTVOutput()
+    }
+
+    @objc private func stopTVOutputAction() {
+        tvOutput.stop()
+    }
+
+    private func startTVOutput() {
+        Task {
+            if pipeline.isRunning {
+                await pipeline.stop()
+                selectedWindowTitle = nil
+                rebuildMenu()
+            }
+            if let error = await tvOutput.start() {
+                NSApp.activate(ignoringOtherApps: true)
+                showAlert(title: "เริ่ม TV Output ไม่ได้", message: error)
+            }
+        }
+    }
+
+    /// Card, format, sound and TV lines while TV Output runs
+    private func addTVOutputInfo(to menu: NSMenu) {
+        var lines: [String]
+        if let info = tvOutput.info {
+            lines = ["📺 TV Output: \(info.deviceName)", "     \(info.formatDescription)"]
+            if let display = tvOutput.displayName {
+                lines.append("     🖥 จอ: \(display)")
+            }
+            lines.append("     " + (tvOutput.soundDescription ?? "🔈 กำลังเปิดเสียง…"))
+        } else {
+            lines = ["📺 กำลังเริ่ม TV Output…"]
+        }
+        for line in lines {
+            let item = NSMenuItem(title: line, action: nil, keyEquivalent: "")
+            item.isEnabled = false
+            menu.addItem(item)
         }
     }
 
@@ -620,6 +708,7 @@ final class StatusBarController: NSObject, ObservableObject {
     }
 
     @objc private func quitApp() {
+        tvOutput.stop()
         Task {
             await pipeline.stop()
             NSApp.terminate(nil)

@@ -17,7 +17,7 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.15.1</string>
+    <string>1.16.0</string>
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>LSMinimumSystemVersion</key>
@@ -26,6 +26,10 @@
     <true/>
     <key>NSScreenCaptureUsageDescription</key>
     <string>GameTranslator needs screen recording permission to capture game windows for text detection and translation.</string>
+    <key>NSCameraUsageDescription</key>
+    <string>Game Translator ใช้ภาพเกมจาก capture card (macOS นับเป็นกล้อง) เพื่อแสดงบนทีวี (TV Output)</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Game Translator เล่นเสียงเกมจาก capture card ระหว่าง TV Output — ไม่ใช้ไมโครโฟนของ Mac</string>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
 </dict>
