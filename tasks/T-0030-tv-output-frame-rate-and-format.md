@@ -2,14 +2,14 @@
 
 | Field | Value |
 |---|---|
-| **Status** | REVIEW |
+| **Status** | REVIEW_FAILED |
 | **Type** | fix |
 | **Priority** | P1 (urgent) |
 | **Version impact** | patch |
 | **Milestone** | M7 — TV Output |
 | **Depends on** | — (stacks on T-0027's code; owner commits T-0027 first) |
 | **Corrects** | T-0027 |
-| **Follow-up** | — |
+| **Follow-up** | T-0033 |
 | **Created** | 2026-09-26 by Cowork |
 
 ## Objective
@@ -149,6 +149,11 @@ Notes (no change needed):
 
 Decision: DONE once AC-5 is confirmed. T-0027's manual ACs are confirmed through this task.
 
+**2026-09-26 — REVIEW_FAILED.** Owner's AC-5 run (on the Mac window, T-0032): no crash, menu = log, unplug
+OK, no lag — but the 1080p60 format runs at **30 fps** (`active after start: 1920×1080 @ 30 fps`). The card's
+60 fps range is 166666/10000000 s (≈60.0002): not exactly 1/60 and not "below 60", so
+`frameDuration(for:)` falls to 30. Tests only covered exact 1/60. → corrective T-0033.
+
 ## Status history
 | Date | Change | Who | Note |
 |---|---|---|---|
@@ -157,3 +162,4 @@ Decision: DONE once AC-5 is confirmed. T-0027's manual ACs are confirmed through
 | 2026-09-26 | IN_PROGRESS → REVIEW | Claude Code | test/code/build ACs pass; AC-5 manual pending owner |
 | 2026-09-26 | — | Cowork | code review passed; waiting for owner manual AC-5 |
 | 2026-09-26 | — | Cowork | owner has no wired TV; AC-5 will be checked on the Mac window after T-0032 (format line + unplug + latency are the same code) |
+| 2026-09-26 | REVIEW → REVIEW_FAILED | Cowork | runs at 30 fps on the owner's card (UVC 60.0002 range missed) → T-0033 |

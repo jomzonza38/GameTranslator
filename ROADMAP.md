@@ -139,4 +139,5 @@ Split into T-0027 (picture on TV + latency) → T-0028 (translation overlay) →
 - Capture regions for TV Output (today one app-wide list; TV Output ignores it in T-0028).
 - Per-game glossary/profile in TV Output (T-0028 uses one profile per capture card name).
 - If T-0027 AC-8 shows the preview layer slower than OBS: own Metal renderer, or uncompressed 720p60.
+- From T-0032: CLAUDE.md Verify — `lsregister -u` prints -10814 / exit 1 for an already unregistered copy; add `2>/dev/null || true`.
 - From T-0027 review F-3: log when a TV Output start is cancelled because *some* video device (not known to be the card) disconnected.

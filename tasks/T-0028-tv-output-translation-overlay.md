@@ -7,7 +7,7 @@
 | **Priority** | P2 (normal) |
 | **Version impact** | minor |
 | **Milestone** | M7 — Capture card mode |
-| **Depends on** | T-0032 |
+| **Depends on** | T-0033 |
 | **Corrects** | — |
 | **Follow-up** | — |
 | **Created** | 2026-09-25 by Cowork |

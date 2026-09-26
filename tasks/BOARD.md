@@ -4,15 +4,14 @@ Index of all tasks. The **Status line inside each task file is the source of
 truth**; whoever changes a status updates this row in the same step.
 Lifecycle and who may set each status: `WORKFLOW.md` §3.
 
-**Next ID:** T-0033
+**Next ID:** T-0034
 
 ## Active
 
 | ID | Title | Status | Priority | Depends on | Next step by |
 |---|---|---|---|---|---|
-| [T-0030](T-0030-tv-output-frame-rate-and-format.md) | TV Output: set the capture frame rate safely and keep the chosen format (corrects T-0027) | REVIEW | P1 | — | Owner (manual AC-5, on the Mac window after T-0032) |
-| [T-0032](T-0032-capture-card-window-on-mac.md) | Switch picture in a window on the Mac (capture card, no OBS) | READY | P1 | — | Claude Code |
-| [T-0028](T-0028-tv-output-translation-overlay.md) | Capture card mode (2/3): Thai translation over the Switch picture | PLANNED | P2 | T-0032 | Cowork (READY after T-0032) |
+| [T-0033](T-0033-capture-at-60fps.md) | Capture card runs at 60 fps when the card offers it (corrects T-0030) | READY | P1 | — | Claude Code |
+| [T-0028](T-0028-tv-output-translation-overlay.md) | Capture card mode (2/3): Thai translation over the Switch picture | PLANNED | P2 | T-0033 | Cowork (READY after T-0033) |
 | [T-0029](T-0029-tv-output-settings.md) | Capture card mode (3/3): Settings tab (Mac / external display, look, delay) | PLANNED | P2 | T-0028 | Cowork (READY after T-0028) |
 
 ## Closed
@@ -49,3 +48,5 @@ Lifecycle and who may set each status: `WORKFLOW.md` §3.
 | [T-0026](T-0026-learning-data-correctness.md) | Learning data stays correct: per-game language, ordered saves, clean clear | DONE | 2026-09-24 | `b7803cf` | — |
 | [T-0027](T-0027-tv-output-capture-card.md) | TV Output (1/3): capture card picture on the TV, without OBS | REVIEW_FAILED | 2026-09-26 | `fe07ca3` | T-0030 |
 | [T-0031](T-0031-no-duplicate-app-copies.md) | Only the installed app shows up in Spotlight / Apps, never build copies | DONE | 2026-09-26 | `3ae8e0f` | — |
+| [T-0030](T-0030-tv-output-frame-rate-and-format.md) | TV Output: set the capture frame rate safely and keep the chosen format | REVIEW_FAILED | 2026-09-26 | `f3201bf` | T-0033 |
+| [T-0032](T-0032-capture-card-window-on-mac.md) | Switch picture in a window on the Mac (capture card, no OBS) | DONE | 2026-09-26 | `f221522` | T-0033 |
