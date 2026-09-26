@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **Status** | PLANNED |
+| **Status** | READY |
 | **Type** | feature |
 | **Priority** | P2 (normal) |
 | **Version impact** | minor |
@@ -108,3 +108,4 @@ next to the original text, over the game picture — without making the picture 
 |---|---|---|---|
 | 2026-09-25 | → PLANNED | Cowork | split from T-0027; READY once T-0027 is DONE |
 | 2026-09-26 | — | Cowork | amended: play on the Mac screen (T-0032), Overlay + Panel on the Switch window; depends on T-0032 |
+| 2026-09-26 | PLANNED → READY | Cowork | T-0033 DONE |
