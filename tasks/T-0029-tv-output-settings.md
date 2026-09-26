@@ -25,6 +25,9 @@ the TV, and how long a new line waits before it is translated.
 - Settings window: `Sources/Views/SettingsWindow.swift` (tabs). Settings persistence: `AppSettings`.
 
 ## Requirements
+> Amended 2026-09-26 (from T-0028): when Output Display is an external display, the translation must show
+> there too (today the borderless panel at `.screenSaver` covers the overlay).
+
 New tab **"TV Output"**:
 
 | Setting | Meaning | Default |
