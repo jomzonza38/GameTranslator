@@ -220,6 +220,47 @@ final class TVOutputTests: XCTestCase {
         XCTAssertNil(TVOutputLayout.outputDisplayIndex(in: []))
     }
 
+    // MARK: Window on the Mac (T-0032)
+
+    func testMacWindowUsesTheBuiltInDisplayEvenWithATV() {
+        let displays = [display(2, builtIn: false, primary: true), display(1, builtIn: true, primary: false)]
+        XCTAssertEqual(TVOutputLayout.macDisplayIndex(in: displays), 1)
+    }
+
+    func testMacWindowWithoutBuiltInDisplayUsesThePrimary() {
+        let displays = [display(3, builtIn: false, primary: false), display(4, builtIn: false, primary: true)]
+        XCTAssertEqual(TVOutputLayout.macDisplayIndex(in: displays), 1)
+        XCTAssertNil(TVOutputLayout.macDisplayIndex(in: []))
+    }
+
+    func testDefaultWindowSizeKeepsThePicturesAspectRatio() {
+        // MacBook Air visible frame (16:10 screen), 16:9 picture
+        let size = CaptureCardWindowLayout.defaultContentSize(video: CGSize(width: 1920, height: 1080),
+                                                              visibleFrame: CGRect(x: 0, y: 0, width: 1470, height: 919))
+        XCTAssertEqual(size.width / size.height, 16.0 / 9.0, accuracy: 0.001)
+        XCTAssertEqual(size.width, 1470 * 0.75, accuracy: 0.5)
+        XCTAssertLessThanOrEqual(size.height, 919 * 0.75)
+    }
+
+    func testDefaultWindowSizeOnATallScreenIsLimitedByHeight() {
+        let size = CaptureCardWindowLayout.defaultContentSize(video: CGSize(width: 1920, height: 1080),
+                                                              visibleFrame: CGRect(x: 0, y: 0, width: 1000, height: 400))
+        XCTAssertEqual(size.height, 300, accuracy: 0.5)
+        XCTAssertEqual(size.width / size.height, 16.0 / 9.0, accuracy: 0.001)
+    }
+
+    func testSavedSizeIsCorrectedToThePicturesAspectRatio() {
+        // Saved from a 4:3 format, now the card sends 16:9: width kept, height follows
+        XCTAssertEqual(CaptureCardWindowLayout.keepingAspect(CGSize(width: 800, height: 600), video: CGSize(width: 1920, height: 1080)),
+                       CGSize(width: 800, height: 450))
+        // Already right: unchanged
+        XCTAssertEqual(CaptureCardWindowLayout.keepingAspect(CGSize(width: 1280, height: 720), video: CGSize(width: 1920, height: 1080)),
+                       CGSize(width: 1280, height: 720))
+        // Unknown picture size: unchanged
+        XCTAssertEqual(CaptureCardWindowLayout.keepingAspect(CGSize(width: 800, height: 600), video: .zero),
+                       CGSize(width: 800, height: 600))
+    }
+
     // MARK: Aspect fit
 
     func testSameAspectFillsTheScreen() {

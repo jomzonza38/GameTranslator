@@ -16,7 +16,7 @@ final class StatusBarController: NSObject, ObservableObject {
     private var welcomeWindow: NSWindow?
 
     let pipeline = PipelineCoordinator()
-    /// Capture card picture on the TV (T-0027)
+    /// Capture card picture in a window on the Mac or on the TV (T-0027, T-0032)
     let tvOutput = TVOutputController()
 
     @Published var availableWindows: [SCWindow] = []
@@ -50,7 +50,7 @@ final class StatusBarController: NSObject, ObservableObject {
             self?.updateStatusIcon(running: false)
         }
 
-        // TV Output started, stopped or unplugged
+        // Capture card picture opened, closed or unplugged
         tvOutput.onChange = { [weak self] in
             guard let self else { return }
             self.rebuildMenu()
@@ -71,7 +71,7 @@ final class StatusBarController: NSObject, ObservableObject {
             Task { @MainActor in self?.toggleTranslation() }
         }
 
-        // ⌃⌥V start/stop TV Output (T-0027)
+        // ⌃⌥V open/close the capture card picture (T-0027, T-0032)
         hotKeys.register(keyCode: kVK_ANSI_V, modifiers: modifiers) { [weak self] in
             Task { @MainActor in self?.toggleTVOutput() }
         }
@@ -299,10 +299,10 @@ final class StatusBarController: NSObject, ObservableObject {
             menu.addItem(selectItem)
         }
 
-        // TV Output (T-0027)
+        // Capture card picture (T-0027, T-0032)
         let tvItem = tvOutput.isActive
-            ? NSMenuItem(title: "⏹ หยุด TV Output", action: #selector(stopTVOutputAction), keyEquivalent: "v")
-            : NSMenuItem(title: "📺 เริ่ม TV Output", action: #selector(startTVOutputAction), keyEquivalent: "v")
+            ? NSMenuItem(title: "⏹ ปิดภาพ capture card", action: #selector(stopTVOutputAction), keyEquivalent: "v")
+            : NSMenuItem(title: "📺 เปิดภาพ Switch (capture card)", action: #selector(startTVOutputAction), keyEquivalent: "v")
         tvItem.keyEquivalentModifierMask = [.control, .option]
         tvItem.target = self
         menu.addItem(tvItem)
@@ -525,9 +525,9 @@ final class StatusBarController: NSObject, ObservableObject {
         }
     }
 
-    // MARK: - TV Output (T-0027)
+    // MARK: - Capture card picture (T-0027, T-0032)
 
-    /// ⌃⌥V — start or stop TV Output. Window translation is stopped first.
+    /// ⌃⌥V — open or close the capture card picture. Window translation is stopped first.
     private func toggleTVOutput() {
         if tvOutput.isActive {
             tvOutput.stop()
@@ -553,22 +553,20 @@ final class StatusBarController: NSObject, ObservableObject {
             }
             if let error = await tvOutput.start() {
                 NSApp.activate(ignoringOtherApps: true)
-                showAlert(title: "เริ่ม TV Output ไม่ได้", message: error)
+                showAlert(title: "เปิดภาพ capture card ไม่ได้", message: error)
             }
         }
     }
 
-    /// Card, format, sound and TV lines while TV Output runs
+    /// Card, format, display and sound lines while the capture card picture is open
     private func addTVOutputInfo(to menu: NSMenu) {
         var lines: [String]
         if let info = tvOutput.info {
-            lines = ["📺 TV Output: \(info.deviceName)", "     \(info.formatDescription)"]
-            if let display = tvOutput.displayName {
-                lines.append("     🖥 จอ: \(display)")
-            }
+            lines = ["📺 Capture card: \(info.deviceName)", "     \(info.formatDescription)"]
+            lines.append("     🖥 " + (tvOutput.displayName.map { "จอ: \($0)" } ?? "หน้าต่างบน Mac"))
             lines.append("     " + (tvOutput.soundDescription ?? "🔈 กำลังเปิดเสียง…"))
         } else {
-            lines = ["📺 กำลังเริ่ม TV Output…"]
+            lines = ["📺 กำลังเปิดภาพ capture card…"]
         }
         for line in lines {
             let item = NSMenuItem(title: line, action: nil, keyEquivalent: "")

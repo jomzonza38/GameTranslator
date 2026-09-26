@@ -18,6 +18,12 @@ enum TVOutputLayout {
         return external.first { !displays[$0].isPrimary } ?? external.first
     }
 
+    /// Index of the display for the window on the Mac (T-0032): the built-in display,
+    /// else the primary one, else the first; nil if there are no displays
+    static func macDisplayIndex(in displays: [TVDisplayCandidate]) -> Int? {
+        displays.firstIndex { $0.isBuiltIn } ?? displays.firstIndex { $0.isPrimary } ?? displays.indices.first
+    }
+
     /// The largest rect with `content`'s aspect ratio centred in `bounds`
     /// (letterbox / pillarbox on black)
     static func aspectFitRect(content: CGSize, in bounds: CGRect) -> CGRect {
@@ -136,11 +142,20 @@ private final class TVOutputPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
-/// Black view holding the preview layer, aspect-fit to the view's bounds
-private final class TVPictureView: NSView {
+/// Black view holding the preview layer, aspect-fit to the view's bounds.
+/// Used by the TV window and the window on the Mac (T-0032).
+final class TVPictureView: NSView {
     private var previewLayer: AVCaptureVideoPreviewLayer?
     private var videoSize: CGSize = .zero
     private var cursorHidden = false
+
+    /// Hide the cursor while it is over the picture (TV: always; Mac window: only
+    /// in full screen)
+    var hidesCursor = true {
+        didSet {
+            if hidesCursor { hideCursorIfInside() } else { showCursor() }
+        }
+    }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -193,7 +208,7 @@ private final class TVPictureView: NSView {
     }
 
     private func hideCursor() {
-        guard !cursorHidden else { return }
+        guard hidesCursor, !cursorHidden else { return }
         NSCursor.hide()
         cursorHidden = true
     }
