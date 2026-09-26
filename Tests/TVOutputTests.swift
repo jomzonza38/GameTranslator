@@ -1,16 +1,48 @@
 import XCTest
 import CoreGraphics
+import CoreMedia
 @testable import GameTranslator
 
 /// AC-1 (T-0027): capture format choice, output display choice, aspect-fit rect,
-/// capture card / audio device matching
+/// capture card / audio device matching. AC-1 (T-0030): frame durations are always
+/// ones the format supports, including discrete 59.94 / 29.97 ranges.
 final class TVOutputTests: XCTestCase {
     private let usb = CaptureCardSelection.fourCC("usb ")
     private let builtIn = CaptureCardSelection.builtInTransport
     private let virtual = CaptureCardSelection.virtualTransport
 
-    private func format(_ w: Int, _ h: Int, _ fps: Double, _ fourCC: String, minFPS: Double = 5) -> CaptureFormatCandidate {
-        CaptureFormatCandidate(width: w, height: h, frameRateRanges: [minFPS...fps], fourCC: fourCC)
+    /// A continuous range from integer rates (durations 1/max … 1/min)
+    private func range(_ minFPS: Int32, _ maxFPS: Int32) -> CaptureFrameRateRange {
+        CaptureFrameRateRange(minFrameRate: Double(minFPS), maxFrameRate: Double(maxFPS),
+                              minFrameDuration: CMTime(value: 1, timescale: maxFPS),
+                              maxFrameDuration: CMTime(value: 1, timescale: minFPS))
+    }
+
+    /// A discrete range as UVC cards report it: min = max, exact NTSC-style duration
+    private func discrete(_ duration: CMTime) -> CaptureFrameRateRange {
+        let fps = Double(duration.timescale) / Double(duration.value)
+        return CaptureFrameRateRange(minFrameRate: fps, maxFrameRate: fps,
+                                     minFrameDuration: duration, maxFrameDuration: duration)
+    }
+
+    private let d60 = CMTime(value: 1, timescale: 60)
+    private let d5994 = CMTime(value: 1001, timescale: 60000)
+    private let d30 = CMTime(value: 1, timescale: 30)
+    private let d2997 = CMTime(value: 1001, timescale: 30000)
+
+    private func format(_ w: Int, _ h: Int, _ fps: Int32, _ fourCC: String, minFPS: Int32 = 5) -> CaptureFormatCandidate {
+        CaptureFormatCandidate(width: w, height: h, frameRateRanges: [range(minFPS, fps)], fourCC: fourCC)
+    }
+
+    private func format(_ ranges: [CaptureFrameRateRange]) -> CaptureFormatCandidate {
+        CaptureFormatCandidate(width: 1920, height: 1080, frameRateRanges: ranges, fourCC: "jpeg")
+    }
+
+    private func assertSupported(_ duration: CMTime?, _ expected: CMTime, in f: CaptureFormatCandidate,
+                                 file: StaticString = #filePath, line: UInt = #line) {
+        guard let duration else { return XCTFail("no duration", file: file, line: line) }
+        XCTAssertEqual(CMTimeCompare(duration, expected), 0, "\(duration) ≠ \(expected)", file: file, line: line)
+        XCTAssertTrue(CaptureCardSelection.isSupported(duration, by: f.frameRateRanges), file: file, line: line)
     }
 
     private func device(_ name: String, _ transport: Int32) -> CaptureDeviceCandidate {
@@ -55,17 +87,68 @@ final class TVOutputTests: XCTestCase {
         XCTAssertNil(CaptureCardSelection.bestFormatIndex(in: []))
     }
 
-    func testFrameRateCapsAtSixty() {
-        XCTAssertEqual(CaptureCardSelection.frameRate(for: format(1920, 1080, 120, "jpeg")), 60)
-        XCTAssertEqual(CaptureCardSelection.frameRate(for: format(1920, 1080, 60, "jpeg")), 60)
-        XCTAssertEqual(CaptureCardSelection.frameRate(for: format(1920, 1080, 30, "jpeg")), 30)
-        // Only a fixed high rate offered: use it
-        XCTAssertEqual(CaptureCardSelection.frameRate(for: format(1920, 1080, 120, "jpeg", minFPS: 120)), 120)
+    // MARK: Frame duration (T-0030)
+
+    func testDiscreteSixty() {
+        let f = format([discrete(d30), discrete(d60)])
+        assertSupported(CaptureCardSelection.frameDuration(for: f), d60, in: f)
+    }
+
+    /// The crash case: 1/60 is not in a discrete 59.94 range → its own 1001/60000
+    func testDiscrete5994UsesTheRangesOwnDuration() {
+        let f = format([discrete(d2997), discrete(d5994)])
+        let duration = CaptureCardSelection.frameDuration(for: f)
+        assertSupported(duration, d5994, in: f)
+        XCTAssertFalse(CaptureCardSelection.isSupported(d60, by: f.frameRateRanges))
+    }
+
+    func testDiscreteThirty() {
+        let f = format([discrete(d30)])
+        assertSupported(CaptureCardSelection.frameDuration(for: f), d30, in: f)
+    }
+
+    func testDiscrete2997() {
+        let f = format([discrete(d2997)])
+        assertSupported(CaptureCardSelection.frameDuration(for: f), d2997, in: f)
+    }
+
+    func testContinuousRangeContainingSixty() {
+        let f = format([range(5, 120)])
+        assertSupported(CaptureCardSelection.frameDuration(for: f), d60, in: f)
+    }
+
+    func testContinuousRangeOnlyBelowSixty() {
+        let f = format([range(5, 30)])
+        assertSupported(CaptureCardSelection.frameDuration(for: f), d30, in: f)
+    }
+
+    func testContinuousRangeOnlyAboveSixtyUsesTheSlowestRate() {
+        let f = format([range(120, 240)])
+        assertSupported(CaptureCardSelection.frameDuration(for: f), CMTime(value: 1, timescale: 120), in: f)
+    }
+
+    func testFixedHighRateOnly() {
+        let f = format([range(120, 120)])
+        assertSupported(CaptureCardSelection.frameDuration(for: f), CMTime(value: 1, timescale: 120), in: f)
+    }
+
+    func testNoRangesGivesNil() {
+        XCTAssertNil(CaptureCardSelection.frameDuration(for: format([])))
+    }
+
+    func testInvalidDurationIsNeverSupported() {
+        XCTAssertFalse(CaptureCardSelection.isSupported(.invalid, by: [range(5, 60)]))
+        XCTAssertFalse(CaptureCardSelection.isSupported(CMTime(value: 0, timescale: 60), by: [range(5, 60)]))
     }
 
     func testDescription() {
-        XCTAssertEqual(CaptureCardSelection.describe(format(1920, 1080, 60, "jpeg"), frameRate: 60),
+        XCTAssertEqual(CaptureCardSelection.describe(width: 1920, height: 1080, fourCC: "jpeg", frameRate: 60),
                        "1920×1080 @ 60 fps · MJPEG")
+        XCTAssertEqual(CaptureCardSelection.describe(width: 1920, height: 1080, fourCC: "jpeg",
+                                                     frameRate: CaptureCardSelection.frameRate(of: d5994)),
+                       "1920×1080 @ 59.94 fps · MJPEG")
+        XCTAssertEqual(CaptureCardSelection.describe(width: 1280, height: 720, fourCC: "2vuy", frameRate: nil),
+                       "1280×720 @ ? fps · UYVY (ไม่บีบอัด)")
     }
 
     func testFourCCRoundTrip() {
