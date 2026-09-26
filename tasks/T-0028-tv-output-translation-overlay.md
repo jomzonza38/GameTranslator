@@ -1,4 +1,4 @@
-# T-0028 — TV Output (2/3): Thai translation over the game picture on the TV
+# T-0028 — Capture card mode (2/3): Thai translation over the Switch picture
 
 | Field | Value |
 |---|---|
@@ -6,11 +6,15 @@
 | **Type** | feature |
 | **Priority** | P2 (normal) |
 | **Version impact** | minor |
-| **Milestone** | M7 — TV Output |
-| **Depends on** | T-0030 (T-0027 corrected) |
+| **Milestone** | M7 — Capture card mode |
+| **Depends on** | T-0032 |
 | **Corrects** | — |
 | **Follow-up** | — |
 | **Created** | 2026-09-25 by Cowork |
+
+> Amended 2026-09-26: the owner now plays on the **Mac screen** (T-0032): the picture is in a normal
+> window on the Mac (or, optionally, on an external display). Wherever it says "TV" below, read "the
+> Switch picture window". Requirement 8 and the hint below were added.
 
 ## Objective
 While TV Output runs, English dialogue in the game is read, translated and shown in Thai on the TV,
@@ -36,15 +40,24 @@ next to the original text, over the game picture — without making the picture 
   game is running). Per-game profiles in TV mode → backlog.
 - Display mode Panel/Overlay doesn't apply to TV Output: the translation is always drawn on the TV.
 
+- Hint (2026-09-26, likely the least work): the Switch picture is now a normal window of our own app, so
+  the **existing** pipeline could translate it like any game window — `ScreenCaptureService` on that
+  window → OCR → Overlay **or** Panel, regions, history, learning all unchanged. The picture itself
+  never waits for this (translation only reads a copy). Today `availableWindows()` excludes the app's
+  own windows — the Switch window must be allowed. The alternative (a throttled
+  `AVCaptureVideoDataOutput`) avoids the Screen Recording path; Claude Code picks and records why.
+
 ## Requirements
 1. TV Output translates what's on the game picture and draws Thai boxes near the original text on the TV.
 2. The picture stays full and unchanged underneath (not text only).
 3. New dialogue replaces the old translation automatically; unchanged text is not re-OCR'd every frame
    and not re-translated (cache).
 4. OCR and translation run off the main thread and never delay the picture.
-5. Capture regions are ignored in TV Output; window translation keeps using them as before.
+5. Capture regions: if the existing pipeline is reused, regions work on the Switch window like on any game window; otherwise they are ignored (record which).
 6. History and the Learning window receive TV Output translations like any other.
 7. Existing window translation, overlay, panel and regions unchanged.
+8. ⌃⌥V opens the Switch window **and** starts translating it; Overlay and Panel display modes both work
+   on it, including in macOS full screen (the overlay/panel must show in the full-screen Space).
 
 ## Out of scope
 - Settings (show original, opacity, delay, pickers) — T-0029. TV-specific regions. Per-game profiles.
@@ -61,7 +74,7 @@ next to the original text, over the game picture — without making the picture 
   no OCR (if the noise-tolerant check is added); a new line of text, and one added character
   (typewriter), → change.
 - **AC-2** [code] OCR frames are dropped before any work down to the capture FPS; no OCR/translation on the main thread.
-- **AC-3** [code] TV Output does not read `captureRegions`; window translation path unchanged.
+- **AC-3** [code] The picture path (preview layer) is unchanged; window translation path for other games unchanged.
 - **AC-4** [build] Unit tests and Release build succeed.
 - **AC-5** [manual] English dialogue → Thai box on the TV next to the text within a second or two after it stops typing.
 - **AC-6** [manual] Next dialogue → old box replaced automatically; the log shows no repeated
@@ -94,3 +107,4 @@ next to the original text, over the game picture — without making the picture 
 | Date | Change | Who | Note |
 |---|---|---|---|
 | 2026-09-25 | → PLANNED | Cowork | split from T-0027; READY once T-0027 is DONE |
+| 2026-09-26 | — | Cowork | amended: play on the Mac screen (T-0032), Overlay + Panel on the Switch window; depends on T-0032 |

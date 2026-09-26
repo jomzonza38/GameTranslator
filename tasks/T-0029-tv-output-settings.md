@@ -1,4 +1,4 @@
-# T-0029 — TV Output (3/3): Settings tab for TV Output
+# T-0029 — Capture card mode (3/3): Settings tab
 
 | Field | Value |
 |---|---|
@@ -6,11 +6,15 @@
 | **Type** | feature |
 | **Priority** | P2 (normal) |
 | **Version impact** | minor |
-| **Milestone** | M7 — TV Output |
+| **Milestone** | M7 — Capture card mode |
 | **Depends on** | T-0028 |
 | **Corrects** | — |
 | **Follow-up** | — |
 | **Created** | 2026-09-25 by Cowork |
+
+> Amended 2026-09-26: default output is now a window on the Mac (T-0032). "Output Display" = **จอ Mac
+> (ค่าเริ่มต้น)** or a connected TV/monitor (T-0027 path). "Fullscreen" = open in macOS full screen on the
+> Mac / borderless on an external display.
 
 ## Objective
 The owner can control TV Output from Settings: which display and devices, how the translation looks on
@@ -26,7 +30,7 @@ New tab **"TV Output"**:
 | Setting | Meaning | Default |
 |---|---|---|
 | Enable TV Output | Switch showing and changing the *current* state (same as ⌃⌥V). Not persisted — off at launch. | OFF |
-| Output Display | Picker of connected displays; "อัตโนมัติ" = first non-built-in. Saved by display name; a saved display that isn't connected shows as "(ไม่ได้ต่ออยู่)". | อัตโนมัติ |
+| Output Display | "จอ Mac" or a connected external display (TV/monitor). Saved by display name; a saved display that isn't connected falls back to the Mac and shows "(ไม่ได้ต่ออยู่)". | จอ Mac |
 | Capture Card | Picker of capture devices; "อัตโนมัติ" = T-0027 rule. | อัตโนมัติ |
 | Game sound | ปิด / อัตโนมัติ (card's own audio) / a listed audio device. | อัตโนมัติ |
 | Resolution | Label "Native (ตามจอ TV)" — the TV mode is never changed; show the capture format in use. | Native |
@@ -82,3 +86,4 @@ New tab **"TV Output"**:
 | Date | Change | Who | Note |
 |---|---|---|---|
 | 2026-09-25 | → PLANNED | Cowork | split from T-0027; READY once T-0028 is DONE |
+| 2026-09-26 | — | Cowork | amended: Mac window is the default output; external display optional |

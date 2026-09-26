@@ -30,7 +30,7 @@ From the owner — every task must keep these (details in `CLAUDE.md`):
 | M4 — Performance & first use | Near-idle CPU on a static screen; no silent minute-long wait on the first OCR | done 2026-09-24 | T-0016, T-0017 |
 | M5 — Know where each translation came from | When the whole window is translated (text in many places, e.g. Graveyard Keeper), the player can tell which translation belongs to which text | done 2026-09-24 | T-0018, T-0019 (→ T-0020), T-0021 |
 | M6 — Learn the language from the games you play | Words and sentences the app translated are kept per game; the player sees what each word/sentence means, practises with a multiple-choice quiz and can ask an AI why a line was translated that way | done 2026-09-24 | T-0022 … T-0025, T-0026 |
-| M7 — TV Output | Play Switch 2 on the TV through the capture card with Thai translation on the picture — read directly (AVFoundation), no OBS, lowest latency | active | T-0027 → T-0028 → T-0029 |
+| M7 — Capture card mode | Play Switch 2 through the capture card **on the Mac screen** (TV/monitor optional) with Thai translation on the picture — read directly (AVFoundation), no OBS, lowest latency | active | T-0027 → T-0030 → T-0032 → T-0028 → T-0029 |
 
 ## Backlog (not yet tasks)
 
@@ -133,8 +133,10 @@ LLM key exists, else Google Free; the chat AI is chosen in Settings. Tasks: T-00
   - A word's chat sends the word as "Game line" without its example sentence.
 
 ### From the 2026-09-25 TV Output request (owner + Cowork)
+2026-09-26: owner changed the goal — play on the Mac screen (window + macOS full screen), external display kept as an option → T-0032.
 Owner decisions: TV Output hotkey ⌃⌥V (⌃⌥T stays start/stop); capture card sound passed through.
 Split into T-0027 (picture on TV + latency) → T-0028 (translation overlay) → T-0029 (settings).
 - Capture regions for TV Output (today one app-wide list; TV Output ignores it in T-0028).
 - Per-game glossary/profile in TV Output (T-0028 uses one profile per capture card name).
 - If T-0027 AC-8 shows the preview layer slower than OBS: own Metal renderer, or uncompressed 720p60.
+- From T-0027 review F-3: log when a TV Output start is cancelled because *some* video device (not known to be the card) disconnected.

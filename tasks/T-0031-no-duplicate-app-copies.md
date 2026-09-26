@@ -102,7 +102,7 @@ which can bring back the Screen Recording prompt and costs the ~74 s Vision reco
 
 **Outcome:** PARTIAL — `[code]`/`[build]` criteria pass; AC-4 pending owner
 **Version:** none (scripts/docs only) — stays 1.16.1
-**Commit:** not committed (waiting for owner)
+**Commit:** `3ae8e0f`
 
 ### Acceptance criteria
 | AC | Result | Evidence |

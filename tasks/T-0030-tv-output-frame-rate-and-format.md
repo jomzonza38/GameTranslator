@@ -130,6 +130,24 @@ here.
 ---
 
 ## Review
+**Cowork code review, 2026-09-26 — code passes; waiting for the owner's AC-5 (manual).**
+Evidence: commit `f3201bf`, `build/Logs/Test` 2026-09-26 08:57 (230 tests, 0 failures).
+
+| AC | Verdict | Note |
+|---|---|---|
+| AC-1 | ✅ | Discrete 60/59.94/30/29.97 and continuous cases, each checked with `isSupported`; `testDiscrete5994…` also proves 1/60 is rejected there (the old crash case). |
+| AC-2 | ✅ | Only integer `CMTime(1, 60)` or a range's own duration is ever set, and only after `isSupported` against `device.activeFormat`'s ranges. |
+| AC-3 | ✅ | Lock held across `startRunning()`, unlocked right after; menu/log/letterbox size read back from the device. |
+| AC-4 | ✅ | See evidence. |
+| AC-5 | ⏳ | Owner: T-0027 AC-5…AC-8 on 1.16.1 + menu format line = log `active after start` line. |
+
+Notes (no change needed):
+- If the chosen format has no usable duration, `intended` says "? fps" and the log will also print the
+  "differs" warning — harmless, and it points at the right place.
+- F-3 accepted as a follow-up (ROADMAP backlog), not a blocker.
+- Commits: T-0027 `fe07ca3` (1.16.0) and T-0030 `f3201bf` (1.16.1) — one task per commit as asked.
+
+Decision: DONE once AC-5 is confirmed. T-0027's manual ACs are confirmed through this task.
 
 ## Status history
 | Date | Change | Who | Note |
@@ -137,3 +155,5 @@ here.
 | 2026-09-26 | → READY | Cowork | corrective task for T-0027 (F-1, F-2) |
 | 2026-09-26 | READY → IN_PROGRESS | Claude Code | started, stacked on uncommitted T-0027 (owner: "เริ่มทำทั้งหมด") |
 | 2026-09-26 | IN_PROGRESS → REVIEW | Claude Code | test/code/build ACs pass; AC-5 manual pending owner |
+| 2026-09-26 | — | Cowork | code review passed; waiting for owner manual AC-5 |
+| 2026-09-26 | — | Cowork | owner has no wired TV; AC-5 will be checked on the Mac window after T-0032 (format line + unplug + latency are the same code) |
