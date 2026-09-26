@@ -40,6 +40,14 @@ final class TVOutputController {
     /// Name of the external display in use (nil in Mac window mode)
     var displayName: String? { window.displayName }
 
+    /// The picture window on the Mac, to translate it with the window pipeline
+    /// (T-0028). nil when not running or on an external display: there the picture
+    /// panel sits above the translation overlay's level (Settings choice, T-0029).
+    var translatableWindowNumber: Int? {
+        guard state == .running, activeOutput == .macWindow else { return nil }
+        return macWindow.windowNumber
+    }
+
     /// Called on every state change (menu + status icon refresh)
     var onChange: (() -> Void)?
 

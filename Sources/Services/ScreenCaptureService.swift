@@ -315,6 +315,16 @@ final class ScreenCaptureService: NSObject, @unchecked Sendable {
         }
     }
 
+    /// The app's own window with this window number — the capture card picture
+    /// (T-0028), which `availableWindows()` leaves out. nil without Screen Recording
+    /// access: checked first, because SCShareableContent shows the system dialog
+    /// when access is missing.
+    static func ownWindow(number: Int) async throws -> SCWindow? {
+        guard CGPreflightScreenCaptureAccess() else { return nil }
+        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+        return content.windows.first { $0.windowID == CGWindowID(number) }
+    }
+
     /// Start capturing the selected window. Throws `CancellationError` if
     /// stopCapture() (or another start) ran while this start was in progress.
     func startCapture(window: SCWindow, frameRate: Double = 5.0) async throws {

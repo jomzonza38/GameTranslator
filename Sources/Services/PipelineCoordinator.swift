@@ -58,6 +58,9 @@ final class PipelineCoordinator: ObservableObject {
     /// stopped (or started again) leaves the current state alone
     private var sessions = StartGeneration()
     private let settings = AppSettings.shared
+    /// Frame statistics logged every 10 s while translating the capture card picture
+    /// (T-0028: how often the exact fingerprint changes on a static Switch screen)
+    private var frameStats: FrameStats?
 
     /// Callback when capture regions change (add/remove/clear)
     var onRegionsChanged: (() -> Void)?
@@ -131,7 +134,10 @@ final class PipelineCoordinator: ObservableObject {
 
     // MARK: - Control
 
-    func start(window: Any) async throws {
+    /// Start translating a window. `profileID` names the game profile (title,
+    /// glossary); by default it is the window's app name. The capture card picture
+    /// (T-0028) passes the card's name — the app can't tell which Switch game runs.
+    func start(window: Any, profileID: String? = nil) async throws {
         guard !isRunning else { return }
 
         // Always refresh provider to pick up the latest API key
@@ -147,7 +153,8 @@ final class PipelineCoordinator: ObservableObject {
         }
 
         // Per-game profile (title, glossary) keyed by the game's app name
-        settings.selectGame(id: scWindow.owningApplication?.applicationName ?? scWindow.title ?? "Unknown")
+        settings.selectGame(id: profileID ?? scWindow.owningApplication?.applicationName ?? scWindow.title ?? "Unknown")
+        frameStats = profileID == nil ? nil : FrameStats()
         contextBuilder.reset(glossary: settings.currentProfile.glossary)
 
         let session = sessions.begin()
@@ -398,6 +405,12 @@ final class PipelineCoordinator: ObservableObject {
     /// skipped, unless the window moved or text is waiting to become stable.
     private func handleCapturedFrame(image: CGImage?, fingerprint: UInt64, startFrame: CGRect, capturedWindowSize: CGSize?) {
         guard isRunning else { return }
+        if var stats = frameStats {
+            if let line = stats.record(changed: image != nil, now: CFAbsoluteTimeGetCurrent()) {
+                GameLog.log("Capture card frames: \(line)")
+            }
+            frameStats = stats
+        }
         let frame: CapturedFrame
         if let image {
             frame = CapturedFrame(image: image, startFrame: startFrame, fingerprint: fingerprint, capturedWindowSize: capturedWindowSize)
@@ -416,6 +429,7 @@ final class PipelineCoordinator: ObservableObject {
             windowFrame: windowFrame,
             workWaiting: isWaitingForStableText
         ) else { return }
+        frameStats?.processed += 1
         processFrame(frame)
     }
 
@@ -1006,6 +1020,32 @@ struct FrameChangeFilter {
     mutating func reset() {
         recent.removeAll()
         lastWindowFrame = nil
+    }
+}
+
+/// Counts frames over an interval (T-0028 diagnostics): all frames ScreenCaptureKit
+/// delivered, those whose pixels changed (exact fingerprint), and those that went on
+/// to OCR. One log line per interval.
+struct FrameStats {
+    var interval: CFAbsoluteTime = 10
+    private(set) var received = 0
+    private(set) var changed = 0
+    var processed = 0
+    private var startedAt: CFAbsoluteTime?
+
+    /// Record one frame; returns the log line when an interval has passed
+    mutating func record(changed isChanged: Bool, now: CFAbsoluteTime) -> String? {
+        let start = startedAt ?? now
+        startedAt = start
+        received += 1
+        if isChanged { changed += 1 }
+        guard now - start >= interval else { return nil }
+        let line = "\(received) received, \(changed) with changed pixels, \(processed) sent to OCR in \(Int((now - start).rounded())) s"
+        received = 0
+        changed = 0
+        processed = 0
+        startedAt = now
+        return line
     }
 }
 

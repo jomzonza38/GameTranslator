@@ -18,6 +18,10 @@ final class StatusBarController: NSObject, ObservableObject {
     let pipeline = PipelineCoordinator()
     /// Capture card picture in a window on the Mac or on the TV (T-0027, T-0032)
     let tvOutput = TVOutputController()
+    /// The pipeline is translating the capture card picture window (T-0028)
+    private var isTranslatingCaptureCard = false
+    /// Why the capture card picture is shown but not translated (menu line)
+    private var captureCardTranslationNote: String?
 
     @Published var availableWindows: [SCWindow] = []
     @Published var selectedWindowTitle: String?
@@ -45,6 +49,7 @@ final class StatusBarController: NSObject, ObservableObject {
 
         // Game window closed while translating — show "not running" and the message
         pipeline.onStoppedUnexpectedly = { [weak self] in
+            self?.isTranslatingCaptureCard = false
             self?.selectedWindowTitle = nil
             self?.rebuildMenu()
             self?.updateStatusIcon(running: false)
@@ -53,6 +58,20 @@ final class StatusBarController: NSObject, ObservableObject {
         // Capture card picture opened, closed or unplugged
         tvOutput.onChange = { [weak self] in
             guard let self else { return }
+            // Picture closed on its own (red button, unplug, timeout): stop translating
+            // it too. Stops the app asks for go through stopCaptureCard() instead.
+            if !self.tvOutput.isActive {
+                self.captureCardTranslationNote = nil
+                if self.isTranslatingCaptureCard {
+                    self.isTranslatingCaptureCard = false
+                    Task {
+                        await self.pipeline.stop()
+                        self.selectedWindowTitle = nil
+                        self.rebuildMenu()
+                        self.updateStatusIcon(running: self.pipeline.isRunning || self.tvOutput.isActive)
+                    }
+                }
+            }
             self.rebuildMenu()
             self.updateStatusIcon(running: self.pipeline.isRunning || self.tvOutput.isActive)
         }
@@ -400,8 +419,8 @@ final class StatusBarController: NSObject, ObservableObject {
 
     private func startTranslation(window: SCWindow) {
         Task {
-            // One session at a time: picking a game window ends TV Output
-            tvOutput.stop()
+            // One session at a time: picking a game window ends the capture card picture
+            await stopCaptureCard()
             do {
                 selectedWindowTitle = window.title ?? "Unknown"
                 try await pipeline.start(window: window)
@@ -508,7 +527,7 @@ final class StatusBarController: NSObject, ObservableObject {
     /// ⌃⌥T — start (window picker) or stop; also stops TV Output when that is running
     private func toggleTranslation() {
         if tvOutput.isActive {
-            tvOutput.stop()
+            Task { await stopCaptureCard() }
         } else if pipeline.isRunning {
             stopTranslation()
         } else {
@@ -518,6 +537,11 @@ final class StatusBarController: NSObject, ObservableObject {
 
     @objc private func stopTranslation() {
         Task {
+            // Translating the Switch picture: "หยุดแปล" closes it too, like ⌃⌥T
+            if tvOutput.isActive {
+                await stopCaptureCard()
+                return
+            }
             await pipeline.stop()
             selectedWindowTitle = nil
             rebuildMenu()
@@ -530,7 +554,7 @@ final class StatusBarController: NSObject, ObservableObject {
     /// ⌃⌥V — open or close the capture card picture. Window translation is stopped first.
     private func toggleTVOutput() {
         if tvOutput.isActive {
-            tvOutput.stop()
+            Task { await stopCaptureCard() }
         } else {
             startTVOutput()
         }
@@ -541,7 +565,21 @@ final class StatusBarController: NSObject, ObservableObject {
     }
 
     @objc private func stopTVOutputAction() {
+        Task { await stopCaptureCard() }
+    }
+
+    /// Close the capture card picture and stop translating it
+    private func stopCaptureCard() async {
+        let wasTranslating = isTranslatingCaptureCard
+        isTranslatingCaptureCard = false
+        captureCardTranslationNote = nil
         tvOutput.stop()
+        if wasTranslating {
+            await pipeline.stop()
+            selectedWindowTitle = nil
+            rebuildMenu()
+            updateStatusIcon(running: pipeline.isRunning || tvOutput.isActive)
+        }
     }
 
     private func startTVOutput() {
@@ -554,8 +592,60 @@ final class StatusBarController: NSObject, ObservableObject {
             if let error = await tvOutput.start() {
                 NSApp.activate(ignoringOtherApps: true)
                 showAlert(title: "เปิดภาพ capture card ไม่ได้", message: error)
+                return
             }
+            await translateCaptureCardPicture()
         }
+    }
+
+    /// T-0028: translate the Switch picture window with the normal window pipeline
+    /// (ScreenCaptureKit on our own window → OCR → Overlay or Panel). The picture never
+    /// waits for this; translation reads a copy. Without Screen Recording access the
+    /// picture still runs, untranslated.
+    private func translateCaptureCardPicture() async {
+        guard let number = tvOutput.translatableWindowNumber, let info = tvOutput.info else { return }
+        guard CGPreflightScreenCaptureAccess() else {
+            GameLog.log("Capture card picture: no Screen Recording permission — picture only")
+            captureCardTranslationNote = "⚠️ ยังไม่ได้อนุญาต Screen Recording — แสดงภาพได้ แต่ยังแปลไม่ได้"
+            rebuildMenu()
+            return
+        }
+
+        // The window list can lag a moment behind a window that was just shown
+        var scWindow: SCWindow?
+        for attempt in 0..<5 where scWindow == nil {
+            if attempt > 0 { try? await Task.sleep(nanoseconds: 200_000_000) }
+            guard tvOutput.translatableWindowNumber == number else { return } // closed meanwhile
+            scWindow = try? await ScreenCaptureService.ownWindow(number: number)
+        }
+        guard let scWindow, tvOutput.translatableWindowNumber == number else {
+            if tvOutput.isActive {
+                GameLog.log("Capture card picture: window \(number) not in the shareable window list — picture only")
+                captureCardTranslationNote = "⚠️ แปลภาพนี้ไม่ได้ (หาหน้าต่างภาพไม่เจอ) — ปิดแล้วเปิดใหม่ด้วย ⌃⌥V"
+                rebuildMenu()
+            }
+            return
+        }
+
+        selectedWindowTitle = info.deviceName
+        isTranslatingCaptureCard = true
+        do {
+            try await pipeline.start(window: scWindow, profileID: info.deviceName)
+        } catch {
+            isTranslatingCaptureCard = false
+            selectedWindowTitle = nil
+            rebuildMenu()
+            showAlert(title: "เริ่มแปลภาพ capture card ไม่ได้", message: error.localizedDescription)
+            return
+        }
+        // Picture closed while translation was starting
+        if !tvOutput.isActive, isTranslatingCaptureCard {
+            isTranslatingCaptureCard = false
+            await pipeline.stop()
+            selectedWindowTitle = nil
+        }
+        rebuildMenu()
+        updateStatusIcon(running: pipeline.isRunning || tvOutput.isActive)
     }
 
     /// Card, format, display and sound lines while the capture card picture is open
@@ -565,6 +655,9 @@ final class StatusBarController: NSObject, ObservableObject {
             lines = ["📺 Capture card: \(info.deviceName)", "     \(info.formatDescription)"]
             lines.append("     🖥 " + (tvOutput.displayName.map { "จอ: \($0)" } ?? "หน้าต่างบน Mac"))
             lines.append("     " + (tvOutput.soundDescription ?? "🔈 กำลังเปิดเสียง…"))
+            if let note = captureCardTranslationNote {
+                lines.append("     " + note)
+            }
         } else {
             lines = ["📺 กำลังเปิดภาพ capture card…"]
         }

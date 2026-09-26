@@ -44,6 +44,9 @@ final class CaptureCardWindowController: NSObject, NSWindowDelegate {
 
     var isShown: Bool { window != nil }
 
+    /// Window-server number of the window, for translating the picture (T-0028)
+    var windowNumber: Int? { window?.windowNumber }
+
     func show(session: AVCaptureSession, videoSize: CGSize, title: String) {
         close()
         self.videoSize = videoSize
