@@ -1,7 +1,8 @@
 # macOS
 .DS_Store
 
-# Build output
+# Build output (build.noindex = derived data, T-0031; build/ = old location)
+build.noindex/
 build/
 DerivedData/
 .build/

@@ -65,12 +65,22 @@ relaunch the app, so it cannot affect the Screen Recording grant:
 ```bash
 xcodegen generate
 xcodebuild test -project GameTranslator.xcodeproj -scheme GameTranslator \
-  -destination 'platform=macOS' -derivedDataPath build 2>&1 \
+  -destination 'platform=macOS' -derivedDataPath build.noindex 2>&1 \
   | grep -E "error:|Executed [0-9]+ tests|TEST (SUCCEEDED|FAILED)"
 xcodebuild build -project GameTranslator.xcodeproj -scheme GameTranslator \
-  -configuration Release -derivedDataPath build CODE_SIGN_IDENTITY="-" 2>&1 \
+  -configuration Release -derivedDataPath build.noindex CODE_SIGN_IDENTITY="-" 2>&1 \
   | grep -E "error:|BUILD (SUCCEEDED|FAILED)"
+# Unregister the build copies from Launch Services (T-0031)
+for app in build.noindex/Build/Products/*/GameTranslator.app; do
+  /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -u "$app"
+done
 ```
+
+- Build products go to `build.noindex/` (Spotlight skips `*.noindex` folders) and the last
+  step removes them from Launch Services, so only the installed app appears in Spotlight / Apps.
+  Don't use `-derivedDataPath build` or build from the Xcode IDE into DerivedData — those copies
+  show up as extra "GameTranslator" apps, and opening one (ad-hoc signed) can bring back the
+  Screen Recording prompt.
 
 **Install and run** — `./build.sh` (generate → Release build → replace the app in
 /Applications → sign → kill the running copy → launch). It replaces the installed
@@ -87,6 +97,7 @@ installed app — never as a routine verification step.
   uploads the .app. macOS uses BSD grep → use `grep -F` for literal `**` strings.
 - `Package.swift` is stale and unused; build with XcodeGen/Xcode only.
 - Runtime log: `~/Desktop/GameTranslator.log` (cleared at each launch).
+- Test results / build logs: `build.noindex/Logs/`.
 
 ### When you can't run Xcode (e.g. Linux sandbox)
 You cannot compile here. Check syntax with tree-sitter-swift

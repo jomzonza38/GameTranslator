@@ -27,7 +27,7 @@ jobs:
       - name: Show Xcode version
         run: |
           xcodebuild -version
-          mkdir -p build
+          mkdir -p build.noindex
 
       - name: Run unit tests (Debug)
         run: |
@@ -37,10 +37,10 @@ jobs:
             -scheme GameTranslator \
             -configuration Debug \
             -destination 'platform=macOS' \
-            -derivedDataPath build \
+            -derivedDataPath build.noindex \
             CODE_SIGN_IDENTITY="-" \
-            | tee build/test.log | grep -E "error:|warning: .*deprecated|Test Suite|Executed|FAILED|passed|failed" || true
-          grep -qF "** TEST SUCCEEDED **" build/test.log
+            | tee build.noindex/test.log | grep -E "error:|warning: .*deprecated|Test Suite|Executed|FAILED|passed|failed" || true
+          grep -qF "** TEST SUCCEEDED **" build.noindex/test.log
 
       - name: Build app (Release)
         run: |
@@ -49,16 +49,16 @@ jobs:
             -project GameTranslator.xcodeproj \
             -scheme GameTranslator \
             -configuration Release \
-            -derivedDataPath build \
+            -derivedDataPath build.noindex \
             CODE_SIGN_IDENTITY="-" \
-            | tee build/release.log | grep -E "error:|BUILD" || true
-          grep -qF "** BUILD SUCCEEDED **" build/release.log
+            | tee build.noindex/release.log | grep -E "error:|BUILD" || true
+          grep -qF "** BUILD SUCCEEDED **" build.noindex/release.log
 
       - name: Upload app
         uses: actions/upload-artifact@v4
         with:
           name: GameTranslator-app
-          path: build/Build/Products/Release/GameTranslator.app
+          path: build.noindex/Build/Products/Release/GameTranslator.app
           if-no-files-found: error
           retention-days: 14
 
@@ -67,4 +67,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: xcodebuild-logs
-          path: build/*.log
+          path: build.noindex/*.log

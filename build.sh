@@ -3,6 +3,20 @@ set -eo pipefail
 
 cd "$(dirname "$0")"
 
+# Build products live in build.noindex/: Spotlight skips folders ending in .noindex,
+# so build copies of the app never show up next to the installed one (T-0031)
+DERIVED_DATA="build.noindex"
+LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+
+# Remove build copies of the app from Launch Services (the "Open with" / Apps list).
+# Only paths under the build folders — never the installed app.
+unregister_build_copies() {
+    local app
+    for app in "$DERIVED_DATA"/Build/Products/*/GameTranslator.app build/Build/Products/*/GameTranslator.app; do
+        [ -d "$app" ] && "$LSREGISTER" -u "$app" 2>/dev/null || true
+    done
+}
+
 # --- Pick a code signing identity ---
 # A real certificate keeps the app's identity stable across rebuilds, so macOS
 # remembers Keychain "Always Allow" and the Screen Recording permission.
@@ -28,11 +42,11 @@ echo "🏗️ Building GameTranslator (Release)..."
 xcodebuild -project GameTranslator.xcodeproj \
     -scheme GameTranslator \
     -configuration Release \
-    -derivedDataPath build \
+    -derivedDataPath "$DERIVED_DATA" \
     CODE_SIGN_IDENTITY="-" \
     clean build
 
-APP_PATH="build/Build/Products/Release/GameTranslator.app"
+APP_PATH="$DERIVED_DATA/Build/Products/Release/GameTranslator.app"
 
 if [ ! -d "$APP_PATH" ]; then
     echo "❌ Build ล้มเหลว — ไม่พบ .app"
@@ -74,9 +88,10 @@ TARGET="$DEST/GameTranslator.app"
 cp -R "$APP_PATH" "$TARGET"
 echo "📦 ลงที่ $TARGET"
 
-# --- Clean build output to avoid duplicate in Spotlight ---
-rm -rf "$APP_PATH"
-touch build/.metadata_never_index 2>/dev/null || true
+# --- Clean build output to avoid duplicates in Spotlight / Apps ---
+# (also the Debug test host left by Verify, and copies in the old build/ folder)
+unregister_build_copies
+rm -rf "$APP_PATH" build/Build/Products/*/GameTranslator.app
 echo "🧹 ลบ build output .app (ป้องกันแอพซ้ำใน Spotlight)"
 
 # --- Sign with entitlements ---
