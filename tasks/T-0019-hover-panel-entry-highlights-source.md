@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **Status** | REVIEW |
+| **Status** | REVIEW_FAILED |
 | **Type** | feature |
 | **Priority** | P2 |
 | **Version impact** | minor |

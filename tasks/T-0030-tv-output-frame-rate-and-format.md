@@ -91,7 +91,7 @@ From the T-0027 review (see its *Review*, F-1/F-2):
 
 **Outcome:** PARTIAL — `[test]`/`[code]`/`[build]` criteria pass; AC-5 pending owner
 **Version:** 1.16.0 → 1.16.1 (T-0027 was 1.15.1 → 1.16.0, not committed yet)
-**Commit:** not committed (waiting for owner)
+**Commit:** `f3201bf`
 
 ### Acceptance criteria
 | AC | Result | Evidence |

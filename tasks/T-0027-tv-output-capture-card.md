@@ -167,7 +167,7 @@ latency can be measured before the translation overlay is built on top of it.
 
 **Outcome:** PARTIAL — `[test]`/`[code]`/`[build]` criteria pass; AC-5…AC-8 pending owner
 **Version:** 1.15.1 → 1.16.0
-**Commit:** not committed (waiting for owner)
+**Commit:** `fe07ca3`
 
 ### Acceptance criteria
 | AC | Result | Evidence |
