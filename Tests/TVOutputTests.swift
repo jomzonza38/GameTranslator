@@ -132,6 +132,65 @@ final class TVOutputTests: XCTestCase {
         assertSupported(CaptureCardSelection.frameDuration(for: f), CMTime(value: 1, timescale: 120), in: f)
     }
 
+    // UVC cards report frame intervals in 100 ns units (T-0033)
+
+    private let uvc60 = CMTime(value: 166666, timescale: 10_000_000)    // ≈ 60.0002 fps
+    private let uvc5994 = CMTime(value: 166833, timescale: 10_000_000)  // ≈ 59.94 fps
+    private let uvc30 = CMTime(value: 333333, timescale: 10_000_000)    // ≈ 30.0000 fps
+    private let uvc50 = CMTime(value: 200000, timescale: 10_000_000)    // 50 fps
+
+    /// The owner's Kingma: 1080p NV12 with 60.0002 and 30 — must run at 60, not 30
+    func testUVCSixtyIsPickedNotThirty() {
+        let f = format([discrete(uvc60), discrete(uvc30)])
+        assertSupported(CaptureCardSelection.frameDuration(for: f), uvc60, in: f)
+        // 1/60 itself is not inside the range — the range's own duration is used
+        XCTAssertFalse(CaptureCardSelection.isSupported(d60, by: f.frameRateRanges))
+    }
+
+    func testUVCSixtyInAnyOrder() {
+        let f = format([discrete(uvc30), discrete(uvc60), discrete(uvc50)])
+        assertSupported(CaptureCardSelection.frameDuration(for: f), uvc60, in: f)
+    }
+
+    func testUVC5994() {
+        let f = format([discrete(uvc30), discrete(uvc5994)])
+        assertSupported(CaptureCardSelection.frameDuration(for: f), uvc5994, in: f)
+    }
+
+    func testUVCSixtyBeatsNTSC5994() {
+        let f = format([discrete(d5994), discrete(uvc60)])
+        assertSupported(CaptureCardSelection.frameDuration(for: f), uvc60, in: f)
+    }
+
+    func testUVCThirtyOnly() {
+        let f = format([discrete(uvc30)])
+        assertSupported(CaptureCardSelection.frameDuration(for: f), uvc30, in: f)
+    }
+
+    func testFiftyOnly() {
+        let f = format([discrete(uvc50), discrete(uvc30)])
+        assertSupported(CaptureCardSelection.frameDuration(for: f), uvc50, in: f)
+    }
+
+    /// Continuous 5…60.0002: exact 1/60 lies inside it
+    func testContinuousUpToUVCSixty() {
+        let f = format([CaptureFrameRateRange(minFrameRate: 5, maxFrameRate: 10_000_000.0 / 166666,
+                                              minFrameDuration: uvc60, maxFrameDuration: CMTime(value: 1, timescale: 5))])
+        assertSupported(CaptureCardSelection.frameDuration(for: f), d60, in: f)
+    }
+
+    func testMenuShowsSixtyForUVCSixty() {
+        XCTAssertEqual(CaptureCardSelection.describe(width: 1920, height: 1080, fourCC: "420v",
+                                                     frameRate: CaptureCardSelection.frameRate(of: uvc60)),
+                       "1920×1080 @ 60 fps · NV12 (ไม่บีบอัด)")
+    }
+
+    func testRangesLogLineHasExactDurations() {
+        let f = format([discrete(uvc60), range(5, 30)])
+        XCTAssertEqual(CaptureCardSelection.describeRanges(f),
+                       "60.0002 fps (166666/10000000 … 166666/10000000 s), 5–30 fps (1/30 … 1/5 s)")
+    }
+
     func testNoRangesGivesNil() {
         XCTAssertNil(CaptureCardSelection.frameDuration(for: format([])))
     }

@@ -52,6 +52,9 @@ enum CaptureCardSelection {
     static let targetFrameRate: Double = 60
     /// 1/60 s, built from integers — never from a Double fps (T-0030)
     static let targetFrameDuration = CMTime(value: 1, timescale: 60)
+    /// Rates up to this count as "60 fps": UVC cards give frame intervals in 100 ns
+    /// units, so 60 fps arrives as 166666/10000000 s ≈ 60.0002 (T-0033)
+    static let maxNearTargetFrameRate: Double = 60.1
 
     /// Words in a device name that say nothing about which physical device it is
     private static let genericNameWords: Set<String> = [
@@ -109,8 +112,9 @@ enum CaptureCardSelection {
     /// Frame duration to run a format at. Always a value the format supports
     /// (setting any other one makes AVFoundation raise an exception — T-0030):
     /// - exactly 1/60 s if a range contains it;
-    /// - else the fastest range below 60 fps, at that range's own shortest duration
-    ///   (59.94 → 1001/60000, 30, 29.97 …);
+    /// - else the fastest range at or below ~60 fps (≤ 60.1, so UVC's 60.0002 and
+    ///   59.94 count as 60 — T-0033), at that range's own shortest duration
+    ///   (166666/10000000, 1001/60000, 50, 30 …);
     /// - else (only faster than 60) the slowest range, at its own longest duration.
     /// nil if the format reports no ranges (the device default is kept).
     static func frameDuration(for format: CaptureFormatCandidate) -> CMTime? {
@@ -118,10 +122,25 @@ enum CaptureCardSelection {
         if ranges.contains(where: { $0.contains(targetFrameDuration) }) {
             return targetFrameDuration
         }
-        if let below = ranges.filter({ $0.maxFrameRate < targetFrameRate }).max(by: { $0.maxFrameRate < $1.maxFrameRate }) {
-            return below.minFrameDuration
+        if let fastest = ranges.filter({ $0.maxFrameRate <= maxNearTargetFrameRate })
+            .max(by: { $0.maxFrameRate < $1.maxFrameRate }) {
+            return fastest.minFrameDuration
         }
         return ranges.min(by: { $0.minFrameRate < $1.minFrameRate })?.maxFrameDuration
+    }
+
+    /// The format's frame-rate ranges with their exact durations, for the log:
+    /// "60.0002 fps (166666/10000000 … 166666/10000000 s), 30 fps (…)"
+    static func describeRanges(_ format: CaptureFormatCandidate) -> String {
+        func rate(_ fps: Double) -> String {
+            let text = String(format: "%.4f", fps)
+            return text.replacingOccurrences(of: "\\.?0+$", with: "", options: .regularExpression)
+        }
+        func time(_ t: CMTime) -> String { "\(t.value)/\(t.timescale)" }
+        return format.frameRateRanges.map { r in
+            let fps = r.minFrameRate == r.maxFrameRate ? rate(r.maxFrameRate) : "\(rate(r.minFrameRate))–\(rate(r.maxFrameRate))"
+            return "\(fps) fps (\(time(r.minFrameDuration)) … \(time(r.maxFrameDuration)) s)"
+        }.joined(separator: ", ")
     }
 
     /// Whether `duration` is inside one of the ranges — checked again right before
@@ -301,7 +320,11 @@ final class CaptureCardService: @unchecked Sendable {
                 locked = true
                 device.activeFormat = device.formats[index]
                 // Only a duration of this format's own ranges is ever set
-                if let duration = CaptureCardSelection.frameDuration(for: format),
+                let picked = CaptureCardSelection.frameDuration(for: format)
+                GameLog.log("TV Output: chosen format \(format.width)x\(format.height)/\(format.fourCC) ranges: "
+                            + CaptureCardSelection.describeRanges(format)
+                            + " → picked \(picked.map { "\($0.value)/\($0.timescale) s" } ?? "none")")
+                if let duration = picked,
                    CaptureCardSelection.isSupported(duration, by: Self.candidate(device.activeFormat).frameRateRanges) {
                     device.activeVideoMinFrameDuration = duration
                     device.activeVideoMaxFrameDuration = duration
