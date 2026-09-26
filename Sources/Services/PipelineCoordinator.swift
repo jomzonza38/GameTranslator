@@ -718,12 +718,21 @@ final class PipelineCoordinator: ObservableObject {
             let ocrTime = CFAbsoluteTimeGetCurrent() - ocrStart
             guard isRunning, !Task.isCancelled else { return }
             if isCaptureCardMode {
-                let signature = works.map { $0.currentTexts.map(\.text).joined(separator: "\n") }.joined(separator: "\u{1}")
-                let wasSlowed = ocrPacer.isSlowed
-                ocrPacer.recordRun(signature: signature, at: CFAbsoluteTimeGetCurrent())
-                if ocrPacer.isSlowed != wasSlowed {
-                    GameLog.log(ocrPacer.isSlowed ? "Capture card: same text read again — OCR at most once a second"
-                                                  : "Capture card: text changed — OCR at full rate")
+                // Pace OCR on "anything new to translate?", not on exact OCR equality (T-0035)
+                let now = CFAbsoluteTimeGetCurrent()
+                let texts = works.flatMap { $0.currentTexts.map(\.text) }
+                let untranslated = Set(works.flatMap { work in
+                    work.currentTexts.map(\.text).filter { work.state.translation(for: $0) == nil }
+                })
+                let before = ocrPacer.pace(now: now)
+                ocrPacer.recordRun(texts: texts, untranslated: untranslated, at: now)
+                let after = ocrPacer.pace(now: now)
+                if after != before {
+                    switch after {
+                    case .full: GameLog.log("Capture card: new text — OCR at full rate")
+                    case .slow: GameLog.log("Capture card: nothing new to translate — OCR at most once a second")
+                    case .slowest: GameLog.log("Capture card: quiet for a while — OCR at most every 2 s")
+                    }
                 }
             }
 

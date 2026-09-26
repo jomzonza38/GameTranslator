@@ -20,6 +20,8 @@ final class StatusBarController: NSObject, ObservableObject {
     let tvOutput = TVOutputController()
     /// The pipeline is translating the capture card picture window (T-0028)
     private var isTranslatingCaptureCard = false
+    /// Translation of the open Switch picture paused by the user (T-0035)
+    private var isCaptureCardTranslationPaused = false
     /// Why the capture card picture is shown but not translated (menu line)
     private var captureCardTranslationNote: String?
 
@@ -62,6 +64,7 @@ final class StatusBarController: NSObject, ObservableObject {
             // it too. Stops the app asks for go through stopCaptureCard() instead.
             if !self.tvOutput.isActive {
                 self.captureCardTranslationNote = nil
+                self.isCaptureCardTranslationPaused = false
                 if self.isTranslatingCaptureCard {
                     self.isTranslatingCaptureCard = false
                     Task {
@@ -93,6 +96,11 @@ final class StatusBarController: NSObject, ObservableObject {
         // ⌃⌥V open/close the capture card picture (T-0027, T-0032)
         hotKeys.register(keyCode: kVK_ANSI_V, modifiers: modifiers) { [weak self] in
             Task { @MainActor in self?.toggleTVOutput() }
+        }
+
+        // ⌃⌥⇧V pause/resume translating the open Switch picture (T-0035)
+        hotKeys.register(keyCode: kVK_ANSI_V, modifiers: modifiers | shiftKey) { [weak self] in
+            Task { @MainActor in self?.toggleCaptureCardTranslation() }
         }
 
         // ⌃⌥1…9 show/hide region 1…9
@@ -325,6 +333,16 @@ final class StatusBarController: NSObject, ObservableObject {
         tvItem.keyEquivalentModifierMask = [.control, .option]
         tvItem.target = self
         menu.addItem(tvItem)
+
+        // Pause/resume translating the Switch picture, picture stays open (T-0035)
+        if tvOutput.translatableWindowNumber != nil {
+            let pauseItem = isTranslatingCaptureCard
+                ? NSMenuItem(title: "⏸ หยุดแปลชั่วคราว (ภาพยังเปิดอยู่)", action: #selector(toggleCaptureCardTranslationAction), keyEquivalent: "v")
+                : NSMenuItem(title: "▶︎ แปลภาพ Switch", action: #selector(toggleCaptureCardTranslationAction), keyEquivalent: "v")
+            pauseItem.keyEquivalentModifierMask = [.control, .option, .shift]
+            pauseItem.target = self
+            menu.addItem(pauseItem)
+        }
 
         menu.addItem(NSMenuItem.separator())
 
@@ -568,10 +586,37 @@ final class StatusBarController: NSObject, ObservableObject {
         Task { await stopCaptureCard() }
     }
 
+    @objc private func toggleCaptureCardTranslationAction() {
+        toggleCaptureCardTranslation()
+    }
+
+    /// ⌃⌥⇧V — pause translating the open Switch picture (the capture stream stops
+    /// completely, the picture keeps running) or start it again (T-0035)
+    private func toggleCaptureCardTranslation() {
+        guard tvOutput.translatableWindowNumber != nil else { return }
+        Task {
+            if isTranslatingCaptureCard {
+                isTranslatingCaptureCard = false
+                isCaptureCardTranslationPaused = true
+                await pipeline.stop()
+                selectedWindowTitle = nil
+                GameLog.log("Capture card picture: translation paused (picture keeps running)")
+            } else {
+                isCaptureCardTranslationPaused = false
+                captureCardTranslationNote = nil
+                GameLog.log("Capture card picture: translation resumed")
+                await translateCaptureCardPicture()
+            }
+            rebuildMenu()
+            updateStatusIcon(running: pipeline.isRunning || tvOutput.isActive)
+        }
+    }
+
     /// Close the capture card picture and stop translating it
     private func stopCaptureCard() async {
         let wasTranslating = isTranslatingCaptureCard
         isTranslatingCaptureCard = false
+        isCaptureCardTranslationPaused = false
         captureCardTranslationNote = nil
         tvOutput.stop()
         if wasTranslating {
@@ -656,6 +701,9 @@ final class StatusBarController: NSObject, ObservableObject {
             lines = ["📺 Capture card: \(info.deviceName)", "     \(info.formatDescription)"]
             lines.append("     🖥 " + (tvOutput.displayName.map { "จอ: \($0)" } ?? "หน้าต่างบน Mac"))
             lines.append("     " + (tvOutput.soundDescription ?? "🔈 กำลังเปิดเสียง…"))
+            if isCaptureCardTranslationPaused {
+                lines.append("     ⏸ หยุดแปลชั่วคราว — กด ⌃⌥⇧V เพื่อแปลต่อ")
+            }
             if let note = captureCardTranslationNote {
                 lines.append("     " + note)
             }

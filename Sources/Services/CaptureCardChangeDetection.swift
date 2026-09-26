@@ -117,35 +117,71 @@ struct LumaChangeDetector {
     }
 }
 
-/// Slows OCR down while it keeps reading the same text (an animated background in
-/// the text area changes pixels but not the words): after `sameResultsBeforeSlowing`
-/// runs with the same result, at most one run per `slowInterval` until the text changes.
+/// Slows OCR down while there is nothing new to translate (T-0035). "New" = a text
+/// on screen that has no translation yet and wasn't seen in the last `rememberFor`
+/// seconds — so a text that flickers in and out (OCR reading 7 ↔ 8 lines of the same
+/// screen) doesn't count, but a new line of dialogue does, at once.
+/// After `quietRunsBeforeSlowing` quiet runs: one OCR per `slowInterval`; after
+/// `quietTimeBeforeSlowest` seconds of quiet: one per `slowestInterval`.
 struct OCRPacer {
-    var sameResultsBeforeSlowing = 3
-    var slowInterval: TimeInterval = 1
+    enum Pace: Equatable {
+        case full
+        case slow
+        case slowest
+    }
 
-    private var lastSignature: String?
-    private(set) var sameCount = 0
+    var quietRunsBeforeSlowing = 3
+    var slowInterval: TimeInterval = 1
+    var quietTimeBeforeSlowest: TimeInterval = 15
+    var slowestInterval: TimeInterval = 2
+    var rememberFor: TimeInterval = 30
+
+    /// Text → when it was last on screen
+    private var seen: [String: CFAbsoluteTime] = [:]
+    private(set) var quietRuns = 0
+    private var quietSince: CFAbsoluteTime?
     private var lastRunAt: CFAbsoluteTime?
 
-    var isSlowed: Bool { sameCount >= sameResultsBeforeSlowing }
+    var isSlowed: Bool { quietRuns >= quietRunsBeforeSlowing }
+
+    func pace(now: CFAbsoluteTime) -> Pace {
+        guard isSlowed else { return .full }
+        if let quietSince, now - quietSince >= quietTimeBeforeSlowest { return .slowest }
+        return .slow
+    }
 
     /// Seconds to wait before the next OCR run (0 = run now)
     func delayBeforeNextRun(now: CFAbsoluteTime) -> TimeInterval {
-        guard isSlowed, let lastRunAt else { return 0 }
-        return max(0, lastRunAt + slowInterval - now)
+        guard let lastRunAt else { return 0 }
+        switch pace(now: now) {
+        case .full: return 0
+        case .slow: return max(0, lastRunAt + slowInterval - now)
+        case .slowest: return max(0, lastRunAt + slowestInterval - now)
+        }
     }
 
-    /// An OCR run finished; `signature` identifies the text it read
-    mutating func recordRun(signature: String, at now: CFAbsoluteTime) {
-        sameCount = signature == lastSignature ? sameCount + 1 : 0
-        lastSignature = signature
+    /// An OCR run finished. `texts` = everything on screen, `untranslated` = those
+    /// without a translation yet. Returns whether it found new text.
+    @discardableResult
+    mutating func recordRun(texts: [String], untranslated: Set<String>, at now: CFAbsoluteTime) -> Bool {
+        seen = seen.filter { now - $0.value < rememberFor }
+        let foundNew = untranslated.contains { seen[$0] == nil }
+        for text in texts { seen[text] = now }
+        if foundNew {
+            quietRuns = 0
+            quietSince = nil
+        } else {
+            if quietSince == nil { quietSince = now }
+            quietRuns += 1
+        }
         lastRunAt = now
+        return foundNew
     }
 
     mutating func reset() {
-        lastSignature = nil
-        sameCount = 0
+        seen.removeAll()
+        quietRuns = 0
+        quietSince = nil
         lastRunAt = nil
     }
 }

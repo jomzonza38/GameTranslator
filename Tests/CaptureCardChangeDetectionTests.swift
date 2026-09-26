@@ -139,22 +139,68 @@ final class CaptureCardChangeDetectionTests: XCTestCase {
         XCTAssertTrue(g.values.allSatisfy { abs($0 - 200) < 1 })
     }
 
-    // MARK: OCR pacer
+    // MARK: OCR pacer (T-0035: "nothing new to translate")
 
-    func testPacerSlowsDownAfterTheSameTextAndSpeedsUpOnNewText() {
+    private let seven = (1...7).map { "Line \($0)" }
+    private var eight: [String] { seven + ["▼"] }
+
+    /// The owner's log: OCR reads 7 ↔ 8 texts of the same, already translated screen.
+    /// Must stay slowed — the old pacer reset to full rate every ~2 s.
+    func testAlternatingSevenAndEightTranslatedTextsStaysSlowed() {
         var pacer = OCRPacer()
-        pacer.recordRun(signature: "Hello", at: 0)
-        XCTAssertEqual(pacer.delayBeforeNextRun(now: 0.1), 0)
-        pacer.recordRun(signature: "Hello", at: 0.2)
-        pacer.recordRun(signature: "Hello", at: 0.4)
-        XCTAssertEqual(pacer.delayBeforeNextRun(now: 0.5), 0, "two repeats: still full rate")
-        pacer.recordRun(signature: "Hello", at: 0.6)
+        // First read: all new
+        XCTAssertTrue(pacer.recordRun(texts: eight, untranslated: Set(eight), at: 0))
+        // Translated now; OCR keeps alternating 7 ↔ 8
+        var t = 0.2
+        for i in 0..<30 {
+            pacer.recordRun(texts: i.isMultiple(of: 2) ? seven : eight, untranslated: [], at: t)
+            t += 0.2
+        }
         XCTAssertTrue(pacer.isSlowed)
-        XCTAssertEqual(pacer.delayBeforeNextRun(now: 0.7), 0.9, accuracy: 0.0001)
-        XCTAssertEqual(pacer.delayBeforeNextRun(now: 2.0), 0)
-        pacer.recordRun(signature: "Next line", at: 2.0)
+        XCTAssertEqual(pacer.pace(now: t), .slow)
+    }
+
+    /// A flickering text that never gets translated (never stable) doesn't reset it either
+    func testFlickeringUntranslatedTextDoesNotResetThePace() {
+        var pacer = OCRPacer()
+        pacer.recordRun(texts: seven + ["~sparkle~"], untranslated: ["~sparkle~"], at: 0)
+        for i in 1...6 {
+            let flicker = i.isMultiple(of: 2)
+            pacer.recordRun(texts: flicker ? seven + ["~sparkle~"] : seven,
+                            untranslated: flicker ? ["~sparkle~"] : [], at: Double(i) * 0.3)
+        }
+        XCTAssertTrue(pacer.isSlowed)
+    }
+
+    func testNewUntranslatedLineGoesBackToFullRateAtOnce() {
+        var pacer = OCRPacer()
+        for i in 0..<5 { pacer.recordRun(texts: seven, untranslated: [], at: Double(i) * 0.2) }
+        XCTAssertTrue(pacer.isSlowed)
+        XCTAssertEqual(pacer.delayBeforeNextRun(now: 0.9), 0.9, accuracy: 0.0001)
+
+        let found = pacer.recordRun(texts: seven + ["Where is the key?"], untranslated: ["Where is the key?"], at: 1.8)
+        XCTAssertTrue(found)
         XCTAssertFalse(pacer.isSlowed)
-        XCTAssertEqual(pacer.delayBeforeNextRun(now: 2.1), 0)
+        XCTAssertEqual(pacer.delayBeforeNextRun(now: 1.85), 0)
+    }
+
+    func testQuietForLongerSlowsDownFurther() {
+        var pacer = OCRPacer()
+        pacer.recordRun(texts: seven, untranslated: Set(seven), at: 0)
+        var t = 0.5
+        while t < 20 {
+            pacer.recordRun(texts: seven, untranslated: [], at: t)
+            t += 1
+        }
+        XCTAssertEqual(pacer.pace(now: t), .slowest)
+        XCTAssertEqual(pacer.delayBeforeNextRun(now: t), 1.0, accuracy: 0.0001, "last run 1 s ago, 2 s interval")
+    }
+
+    func testTextSeenLongAgoCountsAsNewAgain() {
+        var pacer = OCRPacer()
+        pacer.recordRun(texts: ["Yes"], untranslated: ["Yes"], at: 0)
+        XCTAssertFalse(pacer.recordRun(texts: ["Yes"], untranslated: ["Yes"], at: 1))
+        XCTAssertTrue(pacer.recordRun(texts: ["Yes"], untranslated: ["Yes"], at: 40))
     }
 
     // MARK: Capture size (AC-2)
