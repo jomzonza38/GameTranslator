@@ -574,6 +574,9 @@ final class PipelineCoordinator: ObservableObject {
     /// Delay for a re-run triggered by an event (resume, key, provider, language, glossary)
     private static let rerunSoon: TimeInterval = 0.2
 
+    /// Capture card mode: re-read a text that was missing from the last run after this
+    private static let graceRecheck: TimeInterval = 0.5
+
     /// Run the pipeline on the last frame after `delay`, unless a new frame's run
     /// reschedules first. Guarded like a real frame: running session only, and
     /// processFrame queues it behind a run in progress (isProcessing).
@@ -601,13 +604,18 @@ final class PipelineCoordinator: ObservableObject {
         }
         isWaitingForStableText = !isTranslationPaused && untranslatedFailedAt.contains { $0 == nil }
 
-        let delay = StaticScreenRerun.delay(
+        var delay = StaticScreenRerun.delay(
             untranslatedFailedAt: untranslatedFailedAt,
             isPaused: isTranslationPaused,
             glossaryAppliesAt: contextBuilder.pendingGlossaryAppliesAt,
             now: CFAbsoluteTimeGetCurrent(),
             retryDelay: retryDelay
         )
+        // Capture card mode: a text missing from this run is still shown (grace) — read
+        // once more soon to see whether it really left, even on a static screen (T-0036)
+        if isCaptureCardMode, works.contains(where: { $0.state.textBoard.hasEntriesInGrace }) {
+            delay = min(delay ?? Self.graceRecheck, Self.graceRecheck)
+        }
         if let delay {
             scheduleRerun(after: delay)
         } else if !hasPacedRerun {
@@ -821,10 +829,16 @@ final class PipelineCoordinator: ObservableObject {
         }
 
         // Merge adjacent lines
-        let mergedFrame = RegionLayout.mergeAdjacentLines(
+        let mergedLines = RegionLayout.mergeAdjacentLines(
             filteredFrame,
             separator: settings.sourceLanguage.usesWordSpacing ? " " : ""
         )
+        // Capture card mode: map this OCR run onto the texts already shown, so a
+        // misread letter, a merged/split line, box jitter or a text missing for one
+        // run doesn't move, blink or re-translate the Thai box (T-0036)
+        let mergedFrame = isCaptureCardMode
+            ? OCRFrame(texts: state.textBoard.update(with: mergedLines.texts), imageSize: mergedLines.imageSize)
+            : mergedLines
 
         // Only log when the detected-text count changes
         if mergedFrame.texts.count != state.lastLoggedTextCount {

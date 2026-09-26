@@ -13,9 +13,12 @@ final class RegionPipelineState {
     /// When a translation request for a text last failed (for retry back-off)
     var failedAt: [String: CFAbsoluteTime] = [:]
     var lastLoggedTextCount = -1
+    /// Capture card mode: keeps the shown texts still across noisy OCR runs (T-0036)
+    var textBoard = StableTextBoard()
 
     func reset() {
         textTracker.reset()
+        textBoard.reset()
         cachedTranslations.removeAll()
         staleTranslations.removeAll()
         previousFrameTexts.removeAll()
